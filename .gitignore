@@ -1,0 +1,30 @@
+# --- Artefacts de compilation -----------------------------------------------
+build/
+build-*/
+*.uf2
+*.elf
+*.bin
+*.hex
+*.dis
+*.map
+
+# En-tetes generes par pioasm (quadrature.pio.h)
+*.pio.h
+
+# Base de donnees de compilation, quand elle atterrit a la racine
+compile_commands.json
+.cache/
+
+# --- Bancs d'essai hote ------------------------------------------------------
+# test/run.sh compile dans un repertoire temporaire, mais au cas ou :
+test/*.out
+test/a.out
+
+# --- Editeurs et systeme -----------------------------------------------------
+*~
+*.swp
+.DS_Store
+
+# .vscode/ est VOLONTAIREMENT suivi : la configuration generee par l'extension
+# Raspberry Pi Pico n'utilise que ${userHome} et ${command:...}, elle est donc
+# portable et evite a quiconque clone le depot de tout reconfigurer.

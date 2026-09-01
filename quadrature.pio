@@ -1,0 +1,119 @@
+;
+; diffdrive_pico_firmware — decodeur de quadrature x4, une machine a etat par encodeur.
+;
+; Principe
+; --------
+; La SM echantillonne en permanence les deux entrees A (pin de base) et
+; B (pin de base + 1), concatene l'etat precedent et l'etat courant pour
+; former un index de 4 bits, et saute dans une table de 16 entrees placee
+; aux adresses 0..15 (d'ou la directive .origin 0). Chaque entree oriente
+; vers increment / decrement / rien.
+;
+; Convention d'etat : etat = (B << 1) | A   (l'instruction "in pins, 2" en
+; decalage a gauche place le pin de base en bit 0).
+;
+;   sens positif  : 0 -> 1 -> 3 -> 2 -> 0   (A en avance sur B)
+;   sens negatif  : 0 -> 2 -> 3 -> 1 -> 0
+;   les 4 transitions "diagonales" (0<->3, 1<->2) sont impossibles
+;   physiquement : elles signalent un echantillonnage trop lent ou du bruit,
+;   et sont ignorees (aucun comptage) plutot que comptees au hasard.
+;
+; Le compteur signe 32 bits vit dans Y et est publie en continu dans la FIFO
+; RX par "push noblock". Le CPU vide la FIFO puis attend une publication
+; fraiche (cf. encoders.c) : une FIFO pleine ne contient que des valeurs
+; perimees, il ne faut donc jamais se contenter de lire ce qui traine.
+;
+; Limite d'echantillonnage (verifiee par simulation instruction par
+; instruction du programme assemble) : un etat doit etre maintenu au moins
+; 12 cycles PIO pour qu'aucun front ne soit perdu. Avec ENC_PIO_CLKDIV = 12.5
+; sur un systeme a 150 MHz, l'horloge PIO est a 12 MHz, soit une duree d'etat
+; minimale de 1 us et un maximum theorique de 250 kHz de cycles de
+; quadrature. Le robot plafonne a environ 1,1 kHz (170 tr/min, 1540 counts
+; par tour de roue) : marge d'un facteur 230 environ.
+; Corollaire utile : les glitches plus courts que ~1 us sont naturellement
+; rejetes. Augmenter ENC_PIO_CLKDIV filtre davantage, au prix de cette marge.
+;
+; 28 instructions sur les 32 disponibles : le programme occupe un PIO entier,
+; mais les deux encodeurs partagent la meme copie (2 SM, un seul add_program).
+
+.program quadrature
+.origin 0
+
+; ---------------------------------------------------------------------------
+; Table de saut, adresses 0..15. index = (etat_precedent << 2) | etat_courant
+; ---------------------------------------------------------------------------
+    jmp update      ; 0   00 -> 00   immobile
+    jmp plus        ; 1   00 -> 01   +1
+    jmp minus       ; 2   00 -> 10   -1
+    jmp update      ; 3   00 -> 11   transition impossible
+    jmp minus       ; 4   01 -> 00   -1
+    jmp update      ; 5   01 -> 01   immobile
+    jmp update      ; 6   01 -> 10   transition impossible
+    jmp plus        ; 7   01 -> 11   +1
+    jmp plus        ; 8   10 -> 00   +1
+    jmp update      ; 9   10 -> 01   transition impossible
+    jmp update      ; 10  10 -> 10   immobile
+    jmp minus       ; 11  10 -> 11   -1
+    jmp update      ; 12  11 -> 00   transition impossible
+    jmp minus       ; 13  11 -> 01   -1
+    jmp plus        ; 14  11 -> 10   +1
+    jmp update      ; 15  11 -> 11   immobile
+
+; ---------------------------------------------------------------------------
+; Corps
+; ---------------------------------------------------------------------------
+plus:
+    ; Le PIO ne sait que decrementer. Incrementer Y revient a inverser,
+    ; decrementer, reinverser :  ~((~y) - 1) == y + 1
+    mov y, ~y
+    jmp y--, plus_done          ; le decrement est inconditionnel
+plus_done:
+    mov y, ~y
+    jmp update
+
+minus:
+    jmp y--, update             ; decremente puis retombe sur update dans
+                                ; tous les cas (update est l'instruction
+                                ; suivante), y compris quand y valait 0
+
+update:
+    mov x, isr                  ; memorise l'etat courant (bits 1:0 de l'index)
+    mov isr, y                  ; publie le compteur
+    push noblock                ; jamais bloquant : la boucle ne cale pas
+
+sample:
+    mov isr, null
+    in x, 2                     ; bits 3:2 <- etat precedent
+    in pins, 2                  ; bits 1:0 <- etat courant
+    mov pc, isr                 ; saut calcule dans la table
+
+% c-sdk {
+#include "hardware/clocks.h"
+#include "hardware/gpio.h"
+
+// pin_a : broche du canal A. Le canal B doit imperativement etre pin_a + 1.
+static inline void quadrature_program_init(PIO pio, uint sm, uint offset,
+                                           uint pin_a, float clkdiv,
+                                           bool pullup) {
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_a, 2, false);   // entrees
+    pio_gpio_init(pio, pin_a);          // indispensable sur RP2350 : active
+    pio_gpio_init(pio, pin_a + 1u);     // l'input enable du pad
+    if (pullup) {
+        gpio_pull_up(pin_a);
+        gpio_pull_up(pin_a + 1u);
+    } else {
+        gpio_disable_pulls(pin_a);
+        gpio_disable_pulls(pin_a + 1u);
+    }
+
+    pio_sm_config c = quadrature_program_get_default_config(offset);
+    sm_config_set_in_pins(&c, pin_a);
+    // decalage a GAUCHE, pas d'autopush : "in pins, 2" doit deposer le pin de
+    // base en bit 0 pour que l'index de la table soit correct.
+    sm_config_set_in_shift(&c, false, false, 32);
+    sm_config_set_clkdiv(&c, clkdiv);
+
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}
