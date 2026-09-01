@@ -55,7 +55,7 @@ confirmer empiriquement, et qui n'est utilisée que **côté Pi**.
 > alimentés en 3.3 V.
 
 Deux contraintes sont vérifiées à la compilation par des `_Static_assert` dans
-[`config.h`](config.h) : le canal B d'un encodeur doit être `A + 1` (le
+[`config.h`](include/config.h) : le canal B d'un encodeur doit être `A + 1` (le
 programme PIO lit deux broches consécutives), et IN1/IN2 d'un même moteur
 doivent partager la même slice PWM.
 
@@ -67,7 +67,7 @@ Le projet est généré avec « Console over USB » activé et « Console over U
 - `printf` / `getchar` / stdio **sont** le protocole robot, sur USB CDC. Rien
   d'autre n'y transite.
 - Aucun `printf` de debug. Les logs passent exclusivement par la macro `LOG()`
-  ([`log.h`](log.h)), bâtie sur `snprintf` + `uart_write_blocking` sur uart0,
+  ([`log.h`](include/log.h)), bâtie sur `snprintf` + `uart_write_blocking` sur uart0,
   qui court-circuite stdio.
 - `PICO_STDIO_DEFAULT_CRLF=0` dans le CMakeLists, sinon le SDK traduit `\n` en
   `\r\n` et corrompt le tramage.
@@ -187,7 +187,7 @@ Deux comportements à connaître :
 
 ## Configuration
 
-Tout se règle dans [`config.h`](config.h). Les entrées qui comptent :
+Tout se règle dans [`config.h`](include/config.h). Les entrées qui comptent :
 
 | Constante | Défaut | Rôle |
 |---|---|---|
@@ -247,18 +247,26 @@ seuls les accès matériel sont bouchonnés (`test/stubs/`).
 
 ## Organisation du code
 
+```
+CMakeLists.txt  pico_sdk_import.cmake  README.md  CLAUDE.md
+include/   en-têtes du firmware
+src/       implémentation
+pio/       programmes PIO
+test/      bancs d'essai hôte
+```
+
 | Fichier | Rôle |
 |---|---|
-| [`diffdrive_pico_firmware.c`](diffdrive_pico_firmware.c) | boucle principale, chien de garde, ordonnancement 50 Hz |
-| [`config.h`](config.h) | brochage, réglages, gains, assertions de compilation |
-| [`quadrature.pio`](quadrature.pio) | décodage quadrature x4, 28 instructions, 1 SM par encodeur |
-| [`encoders.c`](encoders.c) | lecture des compteurs, vitesse, remise à zéro par offset |
-| [`motors.c`](motors.c) | DRV8871, PWM 25 kHz, modes de décroissance |
-| [`pid.c`](pid.c) | PID de vitesse, dérivée sur la mesure, anti-emballement |
-| [`bno055.c`](bno055.c) | IMU, absence non fatale, redétection à chaud |
-| [`protocol.c`](protocol.c) | parseur non bloquant, trame d'état, checksum |
-| [`testmodes.c`](testmodes.c) | modes `t 1` à `t 4` |
-| [`log.h`](log.h) | macro `LOG()` sur UART0 |
+| [`src/main.c`](src/main.c) | boucle principale, chien de garde, ordonnancement 50 Hz |
+| [`config.h`](include/config.h) | brochage, réglages, gains, assertions de compilation |
+| [`quadrature.pio`](pio/quadrature.pio) | décodage quadrature x4, 28 instructions, 1 SM par encodeur |
+| [`encoders.c`](src/encoders.c) | lecture des compteurs, vitesse, remise à zéro par offset |
+| [`motors.c`](src/motors.c) | DRV8871, PWM 25 kHz, modes de décroissance |
+| [`pid.c`](src/pid.c) | PID de vitesse, dérivée sur la mesure, anti-emballement |
+| [`bno055.c`](src/bno055.c) | IMU, absence non fatale, redétection à chaud |
+| [`protocol.c`](src/protocol.c) | parseur non bloquant, trame d'état, checksum |
+| [`testmodes.c`](src/testmodes.c) | modes `t 1` à `t 4` |
+| [`log.h`](include/log.h) | macro `LOG()` sur UART0 |
 
 Un seul fil d'exécution : la boucle principale. Le timer matériel 50 Hz ne fait
 qu'armer un compteur ; I2C et écritures USB ne sont jamais exécutés sous

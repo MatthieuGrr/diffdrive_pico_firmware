@@ -10,13 +10,13 @@
 #   - la table de verite du DRV8871 dans les deux modes de decroissance
 #   - l'anti-emballement du PID
 #
-# Les modules protocol.c, motors.c et pid.c sont compiles TELS QUELS pour
-# l'hote ; seuls les acces au materiel sont bouchonnes (test/stubs).
+# src/protocol.c, src/motors.c et src/pid.c sont compiles TELS QUELS pour
+# l'hote ; seuls les acces materiel sont bouchonnes (test/stubs).
 set -u
 cd "$(dirname "$0")/.."
 ST=test/stubs
 CC="${CC:-gcc}"
-CFLAGS="-std=c11 -Wall -Wextra -O1 -I. -I$ST"
+CFLAGS="-std=c11 -Wall -Wextra -O1 -Iinclude -I$ST"
 OUT=$(mktemp -d); trap 'rm -rf "$OUT"' EXIT
 rc=0
 
@@ -24,14 +24,14 @@ echo "########## decodeur de quadrature PIO ##########"
 python3 test/test_quadrature_pio.py || rc=1
 
 echo; echo "########## protocole serie ##########"
-$CC $CFLAGS -o "$OUT/p" test/test_protocol.c protocol.c pid.c && "$OUT/p" || rc=1
+$CC $CFLAGS -o "$OUT/p" test/test_protocol.c src/protocol.c src/pid.c && "$OUT/p" || rc=1
 
 echo; echo "########## PID ##########"
-$CC $CFLAGS -o "$OUT/i" test/test_pid.c pid.c -lm && "$OUT/i" || rc=1
+$CC $CFLAGS -o "$OUT/i" test/test_pid.c src/pid.c -lm && "$OUT/i" || rc=1
 
 for mode in DECAY_FAST DECAY_SLOW; do
     echo; echo "########## moteurs — MOTOR_DECAY_MODE = $mode ##########"
-    $CC $CFLAGS -DMOTOR_DECAY_MODE=$mode -o "$OUT/m" test/test_motors.c motors.c -lm \
+    $CC $CFLAGS -DMOTOR_DECAY_MODE=$mode -o "$OUT/m" test/test_motors.c src/motors.c -lm \
         && "$OUT/m" || rc=1
 done
 

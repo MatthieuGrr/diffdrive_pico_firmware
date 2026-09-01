@@ -45,21 +45,21 @@ project(diffdrive_pico_firmware C CXX ASM)
 pico_sdk_init()
 
 add_executable(diffdrive_pico_firmware
-        diffdrive_pico_firmware.c
-        log.c
-        encoders.c
-        motors.c
-        bno055.c
-        pid.c
-        protocol.c
-        testmodes.c
+        src/main.c
+        src/log.c
+        src/encoders.c
+        src/motors.c
+        src/bno055.c
+        src/pid.c
+        src/protocol.c
+        src/testmodes.c
 )
 
 pico_set_program_name(diffdrive_pico_firmware "diffdrive_pico_firmware")
 pico_set_program_version(diffdrive_pico_firmware "1.0.0")
 
 # Decodeur de quadrature x4 : genere quadrature.pio.h
-pico_generate_pio_header(diffdrive_pico_firmware ${CMAKE_CURRENT_LIST_DIR}/quadrature.pio)
+pico_generate_pio_header(diffdrive_pico_firmware ${CMAKE_CURRENT_LIST_DIR}/pio/quadrature.pio)
 
 # ---------------------------------------------------------------------------
 # stdio — REGLE CRITIQUE
@@ -88,8 +88,11 @@ target_compile_definitions(diffdrive_pico_firmware PRIVATE
         PICO_USB_PRODUCT="diffdrive_pico_firmware"
 )
 
+# Les en-tetes du firmware vivent dans include/. L'en-tete genere par pioasm
+# (quadrature.pio.h) est ajoute au chemin d'inclusion par
+# pico_generate_pio_header ci-dessus, il n'a pas a figurer ici.
 target_include_directories(diffdrive_pico_firmware PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}
+        ${CMAKE_CURRENT_LIST_DIR}/include
 )
 
 # ---------------------------------------------------------------------------
