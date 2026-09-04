@@ -175,13 +175,18 @@
 #define PID_KD_DEFAULT          0.0f
 
 /*
- * Terme d'anticipation optionnel : duty = KFF * consigne + PID.
+ * Terme d'anticipation : duty = KFF * consigne + PID.
  * Hors protocole (la commande 'k' ne regle que kp/ki/kd), donc constante de
- * compilation. Une bonne valeur de depart est DUTY_MAX / (ticks/s a pleine
- * vitesse) — a mesurer avec t 3, qui affiche duty et vitesse cote a cote.
- * 0.0 = desactive, le PID travaille seul.
+ * compilation. 0.0 = desactive, le PID travaille seul.
+ *
+ * MESURE au banc, apres rodage des moteurs :
+ *     roue gauche 3807 ticks/s a duty 1000  ->  1000/3807 = 0.263
+ *     roue droite 3643 ticks/s a duty 1000  ->  1000/3643 = 0.274
+ * Les deux roues ne different plus que de 5 % (22 % avant rodage), une
+ * constante unique est donc legitime. Valeur retenue legerement sous la
+ * moyenne : mieux vaut que l'integrateur ajoute que retranche.
  */
-#define PID_KFF                 0.0f
+#define PID_KFF                 0.26f
 
 /* ------------------------------------------------------------------------ */
 /* Securite                                                                  */
