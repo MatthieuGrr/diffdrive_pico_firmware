@@ -84,8 +84,12 @@ target_compile_definitions(diffdrive_pico_firmware PRIVATE
         # le robot doit etre operationnel meme si personne n'ecoute.
         PICO_STDIO_USB_CONNECT_WAIT_TIMEOUT_MS=0
 
-        # Descripteurs USB : facilite l'ecriture d'une regle udev cote Pi.
-        PICO_USB_PRODUCT="diffdrive_pico_firmware"
+        # Descripteur USB. Le SDK lit USBD_PRODUCT / USBD_MANUFACTURER dans
+        # pico_stdio_usb/stdio_usb_descriptors.c ; sans cela le peripherique
+        # s'annonce "Raspberry Pi Pico", indistinguable de n'importe quelle
+        # autre carte. Utile pour une regle udev cote Pi.
+        USBD_PRODUCT="diffdrive_pico_firmware"
+        USBD_MANUFACTURER="MatthieuGrr"
 )
 
 # Les en-tetes du firmware vivent dans include/. L'en-tete genere par pioasm

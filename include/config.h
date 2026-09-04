@@ -105,9 +105,15 @@
 #define MOTOR_IDLE_BRAKE        0
 #endif
 
-/* Inversion du sens de rotation, a ajuster apres le test t 3.               */
-#define MOT_L_INVERT            0
-#define MOT_R_INVERT            1   /* moteurs montes en miroir sur la base */
+/*
+ * Inversion du sens de rotation. DETERMINE EXPERIMENTALEMENT :
+ * avec (0, 1), un rapport cyclique positif faisait RECULER le robot, et les
+ * encodeurs comptaient negativement — donc les encodeurs avaient deja le bon
+ * signe (arriere = negatif) et c'etait la commande moteur qui etait a
+ * l'envers. D'ou (1, 0).
+ */
+#define MOT_L_INVERT            1
+#define MOT_R_INVERT            0
 
 /* ------------------------------------------------------------------------ */
 /* Encodeurs                                                                 */
@@ -128,7 +134,11 @@
 /* de l'encodeur sont a collecteur ouvert, sans effet si elles sont push-pull.*/
 #define ENC_PULLUP              1
 
-/* Inversion du signe des compteurs, a ajuster apres les tests t 1 et t 3.   */
+/*
+ * Inversion du signe des compteurs. VERIFIE EXPERIMENTALEMENT : ces valeurs
+ * sont correctes, les deux encodeurs comptent bien positivement en marche
+ * avant une fois MOT_x_INVERT corrige. Ne pas y toucher.
+ */
 #define ENC_L_INVERT            0
 #define ENC_R_INVERT            1   /* encodeurs montes en miroir */
 

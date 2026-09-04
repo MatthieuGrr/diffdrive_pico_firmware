@@ -81,21 +81,25 @@ int main(void)
 #endif
 
     puts("\nCas limites :");
+    /* sL rend ces cas independants de MOT_L_INVERT : sans lui, le banc
+       codait en dur une configuration particuliere et se mettait a echouer
+       des qu'on inversait la roue gauche. */
+    const float sL = MOT_L_INVERT ? -1.0f : 1.0f;
     motors_set(MOT_L,0);
     ck("duty 0 : les deux entrees au niveau bas (roue libre)",
        h_lvl[sl[0]][0]==0 && h_lvl[sl[0]][1]==0);
     motors_set(MOT_L,1000);
     p = profile(sl[0],0,1,span);
-    ck("duty +1000 : entrainement plein avant, sans temps mort", p.drive==1.0f);
+    ck("duty +1000 : entrainement plein, sans temps mort", p.drive==sL);
     motors_set(MOT_L,-1000);
     p = profile(sl[0],0,1,span);
-    ck("duty -1000 : entrainement plein arriere", p.drive==-1.0f);
+    ck("duty -1000 : entrainement plein en sens oppose", p.drive==-sL);
     motors_set(MOT_L,5000);
     p = profile(sl[0],0,1,span);
-    ck("consigne hors plage ecretee a +1000", p.drive==1.0f);
+    ck("consigne hors plage ecretee a +1000", p.drive==sL);
     motors_set(MOT_L,-5000);
     p = profile(sl[0],0,1,span);
-    ck("consigne hors plage ecretee a -1000", p.drive==-1.0f);
+    ck("consigne hors plage ecretee a -1000", p.drive==-sL);
 
     motors_set(MOT_L,700); motors_set(MOT_R,-400);
     motors_coast_all();
@@ -110,10 +114,12 @@ int main(void)
     for(int duty=-1000; duty<=1000; duty++){
         motors_set(MOT_L,duty);
         profile_t q = profile(sl[0],0,1,span);
-        if(q.drive < prev - 1e-6f) mono=0;
-        prev=q.drive;
+        float d = q.drive * sL;     /* remis dans le repere de la consigne */
+        if(d < prev - 1e-6f) mono=0;
+        prev=d;
     }
-    ck("entrainement strictement croissant de -1000 a +1000 (roue G)", mono);
+    ck("entrainement monotone de -1000 a +1000 (roue G, inversion comprise)",
+       mono);
 
     printf("\n%d cas, %d echec(s)\n",total,fails);
     return fails!=0;
