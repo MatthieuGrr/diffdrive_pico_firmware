@@ -233,6 +233,18 @@
 #define TEST_PID_STEP           4
 #define TEST_MODE_MAX           4
 
+/*
+ * Counts par tour de roue — PUREMENT INFORMATIF, aucun calcul ne l'utilise.
+ * Ne sert qu'au message du mode t 1, pour vous donner la cible a comparer.
+ * La frontiere d'abstraction tient : la conversion ticks -> distance vit
+ * cote Pi, ce firmware ne fait qu'afficher ce nombre dans un log.
+ *
+ * Mesure sur 10 tours de roue a la main : 14960 ticks, soit
+ *     1496 = 11 PPR x 4 (quadrature) x 34:1 (reduction)
+ * Le reducteur est bien en 34:1 et non 35:1 comme annonce initialement.
+ */
+#define TEST_COUNTS_PER_REV     1496
+
 /* Cadence d'affichage des modes lents (t 1, t 2, t 3), en Hz.               */
 #define TEST_SLOW_LOG_HZ        5u
 

@@ -28,7 +28,7 @@
 ; 12 cycles PIO pour qu'aucun front ne soit perdu. Avec ENC_PIO_CLKDIV = 12.5
 ; sur un systeme a 150 MHz, l'horloge PIO est a 12 MHz, soit une duree d'etat
 ; minimale de 1 us et un maximum theorique de 250 kHz de cycles de
-; quadrature. Le robot plafonne a environ 1,1 kHz (170 tr/min, 1540 counts
+; quadrature. Le robot plafonne a environ 1,1 kHz (170 tr/min, 1496 counts
 ; par tour de roue) : marge d'un facteur 230 environ.
 ; Corollaire utile : les glitches plus courts que ~1 us sont naturellement
 ; rejetes. Augmenter ENC_PIO_CLKDIV filtre davantage, au prix de cette marge.

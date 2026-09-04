@@ -28,8 +28,9 @@ Encodeurs alimentés en 3.3V. Le GPIO du RP2350 n'est pas tolérant 5V.
 - Compteurs d'encodeurs cumulés dans les trames, jamais des deltas.
 
 ## Contexte matériel
-1540 counts par tour de roue (11 PPR x4 x 35:1) — valeur à vérifier
-empiriquement.
+1496 counts par tour de roue (11 PPR x4 x 34:1) — MESURÉ sur 10 tours
+(14960 ticks). Le réducteur est en 34:1, pas 35:1 comme annoncé au départ.
+Cette valeur vit côté Pi, jamais dans le firmware.
 Moteurs 24V, 170 RPM.
 
 ## Développement

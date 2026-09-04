@@ -31,14 +31,17 @@ négociable est le chien de garde de 300 ms.
 | Carte | Raspberry Pi Pico 2 (RP2350, Cortex-M33), pico-sdk 2.3.0 |
 | Moteurs | 2 × GA25-370, 24 V, 170 tr/min en sortie de réducteur |
 | Drivers | 2 × DRV8871, un par moteur, commandés par 2 PWM (IN1/IN2) |
-| Encodeurs | quadrature à effet Hall, 11 PPR par canal, réduction 35:1 |
+| Encodeurs | quadrature à effet Hall, 11 PPR par canal, réduction 34:1 |
 | IMU | BNO055 en I2C, mode IMU (fusion 6 axes, magnétomètre désactivé) |
 
 Le magnétomètre est volontairement coupé : sur une base à moteurs à courant
 continu il ne mesure guère que le champ des moteurs.
 
-À titre indicatif, 11 PPR × 4 × 35 = **1540 counts par tour de roue** — valeur à
-confirmer empiriquement, et qui n'est utilisée que **côté Pi**.
+**1496 counts par tour de roue**, soit 11 PPR × 4 (quadrature) × 34:1. Valeur
+**mesurée** sur 10 tours de roue (14 960 ticks), pas déduite d'une fiche
+technique : le réducteur livré est en 34:1 et non 35:1. Utilisée uniquement
+**côté Pi** — se tromper de 35:1 coûte 2,9 % sur les distances et 10° sur un
+tour complet du robot.
 
 ## Brochage
 
@@ -144,7 +147,7 @@ def verifier(ligne: str) -> bool:
     charge, chk = ligne.rstrip("\n").rsplit(" ", 1)
     return functools.reduce(operator.xor, charge.encode(), 0) == int(chk, 16)
 
-assert verifier("S 123456 1540 -1540 4362 -4362 12 -34 56 -78 910 -1011 68\n")
+assert verifier("S 123456 1496 -1496 4362 -4362 12 -34 56 -78 910 -1011 68\n")
 ```
 
 ## Modes de test intégrés
@@ -212,7 +215,7 @@ Tourne sur le PC, sans SDK ni carte branchée : `gcc` et `python3` suffisent.
 coûterait le plus cher à diagnostiquer au banc :
 
 - **décodeur PIO** — simulé instruction par instruction sur le binaire
-  assemblé : x4 dans les deux sens, un tour de roue à 1540 counts, transitions
+  assemblé : x4 dans les deux sens, un tour de roue à 1496 counts, transitions
   illégales ignorées, rebonds sans dérive, état de départ quelconque. Limite
   mesurée : un état doit tenir ≥ 12 cycles PIO, soit 1 µs au réglage livré —
   marge ×230 sur les ~1,1 kHz du robot ;
@@ -232,7 +235,7 @@ seuls les accès matériel sont bouchonnés (`test/stubs/`).
 1. **À vide, moteurs non alimentés.** Flash en BOOTSEL, USB-UART sur GP0/GND à
    115200. Le bandeau doit lister brochage, mode de décroissance compilé et
    présence du BNO055. LED : clignotement lent = pas de commande reçue.
-2. **`t 1`** — tourner une roue d'un tour exact à la main : ≈ 1540. Dans
+2. **`t 1`** — tourner une roue d'un tour exact à la main : 1496. Dans
    l'autre sens, le signe s'inverse. Sinon, corriger `ENC_x_INVERT`.
 3. **`t 2`** — CHIP_ID = 0xA0. `mag = 0` est normal en mode IMU. Laisser
    immobile quelques secondes pour voir `gyr` monter à 3.

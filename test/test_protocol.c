@@ -144,7 +144,7 @@ int main(void)
     puts("\nTrame d'etat et checksum :");
     struct { int32_t el,er,vl,vr; int16_t g[3],a[3]; uint32_t t; } cases[] = {
         {0,0,0,0,{0,0,0},{0,0,0},0},
-        {1540,-1540,4362,-4362,{12,-34,56},{-78,910,-1011},123456},
+        {1496,-1496,4362,-4362,{12,-34,56},{-78,910,-1011},123456},
         {INT32_MAX,INT32_MIN,INT32_MAX,INT32_MIN,{32767,-32768,0},{32767,-32768,1},4294967295u},
     };
     for(unsigned i=0;i<sizeof cases/sizeof*cases;i++){

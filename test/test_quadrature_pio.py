@@ -58,9 +58,9 @@ for t in (1,4,10,50):
     check(f"avant, {t} cycles de quadrature",   run(cyc(FWD,t),30),  4*t)
     check(f"arriere, {t} cycles de quadrature", run(cyc(REV,t),30), -4*t)
 
-print("\nUn tour de roue complet — 385 cycles de quadrature = 1540 counts :")
-check("avant",   run(cyc(FWD,385),30),  1540)
-check("arriere", run(cyc(REV,385),30), -1540)
+print("\nUn tour de roue complet — 374 cycles de quadrature = 1496 counts :")
+check("avant",   run(cyc(FWD,374),30),  1496)
+check("arriere", run(cyc(REV,374),30), -1496)
 
 print("\nAller-retour, retour exact au point de depart :")
 check("+100 transitions puis -100", run(cyc(FWD,25)+REV*25+[REV[0]],30), 0)

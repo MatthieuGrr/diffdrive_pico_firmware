@@ -32,7 +32,8 @@ static void banner(int mode)
         break;
     case TEST_ENCODERS:
         LOG("=== t 1 : encodeurs seuls, moteurs coupes ===");
-        LOG("    tourner une roue d'un tour exact doit donner 1540 counts");
+        LOG("    tourner une roue d'un tour exact doit donner %d counts",
+            TEST_COUNTS_PER_REV);
         LOG("    et le signe doit s'inverser dans l'autre sens");
         LOG("    colonnes : enc_G enc_D | brut_G brut_D | v_G v_D (ticks/s)");
         break;
