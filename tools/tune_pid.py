@@ -30,7 +30,7 @@ DUTIES      = [300, 500, 700, 900]   # niveaux d'identification
 STEP_HOLD   = 0.9                    # duree d'un echelon, secondes
 DEAD_MAX    = 320                    # borne du balayage de zone morte
 VERIF_SP    = 1500                   # consigne de verification, ticks/s
-VERIF_HOLD  = 1.2
+VERIF_HOLD  = 2.0      # assez long pour que l'etablissement soit mesurable
 ALPHA       = 0.5                    # VEL_LPF_ALPHA du firmware
 T_CTRL      = 0.02                   # periode de controle
 KFF         = 0.26                   # PID_KFF du firmware
@@ -43,8 +43,21 @@ s = None
 _buf = b""
 
 def connecter():
+    """Ouvre la liaison, avec un diagnostic lisible plutot qu'une trace.
+    Un port ABSENT et un port LIBRE ne se distinguent pas avec fuser : il faut
+    tester l'existence du fichier."""
     global s
-    s = serial.Serial(PORT, 115200, timeout=0.05)
+    if not os.path.exists(PORT):
+        log(f"{PORT} n'existe pas — le Pico n'est pas vu par la machine.")
+        log("Verifiez le cable USB (c'est le suspect numero un quand le robot")
+        log("vient de rouler), puis que 'lsusb' montre bien 2e8a:0009.")
+        sys.exit(2)
+    try:
+        s = serial.Serial(PORT, 115200, timeout=0.05)
+    except serial.SerialException as e:
+        log(f"{PORT} existe mais refuse de s'ouvrir : {e}")
+        log("Un autre programme le tient peut-etre (un screen reste ouvert ?).")
+        sys.exit(2)
     time.sleep(0.3); s.reset_input_buffer()
 
 def env(c):
@@ -145,11 +158,29 @@ def ajuster(ech, duty):
     """
     if len(ech) < 12:
         return None
-    t0 = ech[0][0]
     idx = 1 if duty > 0 else 2          # colonne encodeur (placee par l'appelant)
+
+    # DETECTION DU DEMARRAGE REEL. Une roue peut rester collee plusieurs
+    # centaines de millisecondes avant de partir d'un coup : mesure sur ce
+    # robot, 360 ms d'immobilite a duty -700. Chercher le depart dans une
+    # fenetre de +/-60 ms autour de la commande fait alors interpreter la
+    # montee tardive comme un gain enorme. On recale donc la fenetre sur le
+    # premier mouvement franc, deux echantillons avant.
+    x0 = ech[0][idx]
+    dep = 0
+    for k, e in enumerate(ech):
+        if abs(e[idx] - x0) > 4:
+            dep = max(0, k - 2); break
+    else:
+        return None                     # la roue n'a jamais bouge
+    ech = ech[dep:]
+    if len(ech) < 10:
+        return None
+    t0 = ech[0][0]
     T = [(e[0] - t0) / 1000.0 for e in ech]
     X = [float(e[idx]) for e in ech]
     n = len(T)
+    retard_colle = dep * 0.02
 
     def essai(tau, theta):
         sb = sbb = sx = sbx = 0.0
@@ -184,12 +215,35 @@ def ajuster(ech, duty):
             r = essai(tau2, th2)
             if r and r[0] < best[0]:
                 best = (r[0], tau2, th2, r[1])
-    _, tau, th, K = best
-    return dict(tau=tau, theta=th, K=K, vss=K * duty)
+    r, tau, th, K = best
+    # Qualite : residu quadratique moyen rapporte a l'amplitude du deplacement.
+    etendue = max(X) - min(X)
+    qualite = (math.sqrt(r / n) / etendue) if etendue > 1 else 9.9
+    # Un parametre colle a une borne de grille signale un ajustement qui n'a
+    # pas trouve d'optimum interne : la valeur ne veut rien dire.
+    borne = tau <= 0.012 or tau >= 0.850 or th <= -0.039 or th >= 0.059
+    return dict(tau=tau, theta=th, K=K, vss=K * duty,
+                qualite=qualite, borne=borne, colle=retard_colle)
 
 
-def regression(pts):
-    """v_ss = a.u + b  ->  gain incremental a, zone morte -b/a."""
+def regression(pts, robuste=True):
+    """v_ss = a.u + b  ->  gain incremental a, zone morte -b/a.
+
+    Avec rejet des aberrants : une roue qui colle puis se decroche produit un
+    point tres eloigne, et un seul suffit a fausser la pente."""
+    if robuste and len(pts) >= 5:
+        a0, _ = _moindres_carres(pts)
+        if a0:
+            res = sorted(abs(v - a0 * u) for u, v in pts)
+            med = res[len(res) // 2]
+            garde = [(u, v) for u, v in pts
+                     if abs(v - a0 * u) <= max(3.0 * med, 0.12 * abs(v) + 50)]
+            if len(garde) >= 4:
+                pts = garde
+    return _moindres_carres(pts)
+
+
+def _moindres_carres(pts):
     n = len(pts)
     su = sum(u for u, _ in pts); sv = sum(v for _, v in pts)
     suu = sum(u * u for u, _ in pts); suv = sum(u * v for u, v in pts)
@@ -442,6 +496,14 @@ def main():
                   resultats["courbes_step"].append(
                       dict(roue=nom, duty=d, t=[round(x, 3) for x in tt],
                            v=vv, vm=vm))
+                  if m.get("borne") or m.get("qualite", 9) > 0.02:
+                      log(f"    duty {d:+5} roue {nom} : ajustement rejete "
+                          f"(qualite {m.get('qualite', 0):.3f}"
+                          f"{', parametre en butee' if m.get('borne') else ''})")
+                      continue
+                  if m.get("colle", 0) > 0.15:
+                      log(f"    duty {d:+5} roue {nom} : {1000*m['colle']:.0f} ms "
+                          f"d'adherence au demarrage avant le depart")
                   modeles[nom].append(m)
                   # VALEURS ABSOLUES : avec les duty signes, la symetrie des
                   # points +/-u force l'ordonnee a l'origine a zero, ce qui
@@ -495,7 +557,7 @@ def main():
           """Applique les gains, fait un aller-retour, renvoie le pire des deux
           roues en depassement et en temps d'etablissement."""
           env(f"k {kp:.5f} {ki:.5f} 0"); time.sleep(0.15)
-          dep = etab = 0.0; det = []; courbes = []
+          dep = etab = ond = 0.0; det = []; courbes = []
           for sgn in (+1, -1):
               sp = VERIF_SP * sgn
               attendre_arret()
@@ -512,43 +574,86 @@ def main():
                       if abs(vv - sp) > 0.05*abs(sp): te = tt
                   fin_v = sum(v[-15:])/15
                   err = 100*(abs(fin_v)-abs(sp))/abs(sp)
+                  # Ondulation en regime etabli. Un gain trop fort fait chasser
+                  # la quantification de 50 ticks/s : la vitesse reste juste en
+                  # moyenne mais la commande s'agite, et sur un vrai moteur cela
+                  # s'entend et se paie en courant. Les trames ne portent pas le
+                  # rapport cyclique, l'ondulation de vitesse en est le temoin.
+                  q = v[-25:] if len(v) >= 25 else v
+                  moy = sum(q)/len(q)
+                  ec = math.sqrt(sum((x-moy)**2 for x in q)/len(q))
+                  ond = max(ond, 100*ec/abs(sp))
                   dep = max(dep, d); etab = max(etab, te)
                   det.append((sgn, nom, d, te, err))
                   if sgn > 0:
                       courbes.append(dict(roue=nom,
                                           t=[round(x, 3) for x in t], v=v))
-          return dep, etab, det, courbes
+          return dep, etab, det, courbes, ond
 
       DEP_CIBLE = 8.0
-      meilleur = None
-      for it in range(8):
+      OND_MAX   = 4.0        # ondulation de vitesse toleree en regime etabli, %
+      base_kp, base_ki = kp, ki
+
+      # Recherche par ENCADREMENT sur un multiplicateur unique applique aux
+      # deux gains. Comme kp/ki reste constant, seul le gain de boucle bouge :
+      # le zero du correcteur ne se deplace pas. La version precedente montait
+      # et descendait par facteurs fixes et oscillait sans converger — mesure
+      # sur ce robot : 2,3 -> 7,1 -> 12,2 -> 6,5 -> 9,5 -> 14,7 -> 8,3 -> 11,9 %.
+      # Un encadrement ne peut pas osciller : chaque essai retrecit l'intervalle.
+      m = 1.0; bas = haut = None; meilleur = None
+      for it in range(9):
+          kp, ki = base_kp * m, base_ki * m
           r = essai(kp, ki)
           if r is None:
               log("    trop peu de trames — liaison instable"); break
-          dep, etab, det, courbes = r
+          dep, etab, det, courbes, ond = r
+          etabli = etab < VERIF_HOLD - 0.15
           resultats.setdefault("iterations", []).append(
               dict(n=it + 1, kp=kp, ki=ki, dep=dep, etab=etab,
-                   sp=VERIF_SP, courbes=courbes))
-          log(f"    iteration {it+1} : kp={kp:.4f} ki={ki:.3f} -> "
-              f"depassement {dep:+5.1f} %  etabli en {etab:.2f} s")
+                   sp=VERIF_SP, ond=ond, courbes=courbes))
+          log(f"    essai {it+1} : x{m:.2f}  kp={kp:.4f} ki={ki:.3f} -> "
+              f"depassement {dep:+5.1f} %  ondulation {ond:4.1f} %  "
+              + (f"etabli en {etab:.2f} s" if etabli else "PAS ETABLI"))
           for sgn, nom, d, te, err in det:
               log(f"        consigne {VERIF_SP*sgn:+5} roue {nom} : "
                   f"dep {d:+5.1f} %  etabli {te:4.2f} s  err stat {err:+5.1f} %")
-          if meilleur is None or (dep <= DEP_CIBLE + 4 and etab < meilleur[3]):
-              meilleur = (kp, ki, dep, etab)
-          if dep > DEP_CIBLE + 4:
-              ki *= 0.55; kp *= 0.85
-              log("        -> trop de depassement, on assouplit")
-          elif etab > 2.5 * lam_ref and dep < DEP_CIBLE + 2:
-              ki *= 1.5; kp *= 1.2
-              log("        -> trop lent, on durcit")
-          else:
-              log("        -> criteres atteints")
-              meilleur = (kp, ki, dep, etab); break
 
-      if meilleur:
-          kp, ki, dep, etab = meilleur
+          # Trois cas distincts, et surtout deux facons opposees d'echouer :
+          # trop de depassement demande d'assouplir, ne pas atteindre la
+          # consigne demande au contraire de durcir. Les confondre fait
+          # descendre le gain alors que la boucle est deja trop molle.
+          if dep > DEP_CIBLE or ond > OND_MAX:
+              haut = m
+              m = (bas + m) / 2 if bas is not None else m * 0.55
+              log(f"        -> {'depassement excessif' if dep > DEP_CIBLE else 'commande trop agitee'}"
+                  f", on assouplit (x{m:.2f})")
+          elif not etabli:
+              m = m * 1.7 if haut is None else (m + haut) / 2
+              log(f"        -> consigne pas atteinte, on durcit (x{m:.2f})")
+          else:
+              bas = m
+              # On garde le plus RAPIDE des reglages conformes, pas le plus
+              # ferme : au-dela d'un certain gain la reponse se degrade sans
+              # que le depassement franchisse encore le seuil.
+              cand = (kp, ki, dep, etab, ond)
+              if meilleur is None or etab < meilleur[3] - 1e-9:
+                  meilleur = cand
+              m = m * 1.7 if haut is None else (m + haut) / 2
+              log(f"        -> conforme, on tente plus ferme (x{m:.2f})")
+
+          if bas is not None and haut is not None and haut / bas < 1.15:
+              log("        -> encadrement resserre, recherche terminee"); break
+
+      if meilleur is None:
+          log("    AUCUN reglage n'a tenu les criteres. Les gains restent au "
+              "point de depart, a considerer comme non valides.")
+          kp, ki = base_kp, base_ki
+          dep = etab = float("nan")
+      else:
+          kp, ki, dep, etab, ond = meilleur
           env(f"k {kp:.5f} {ki:.5f} 0")
+          log(f"\n    RETENU : kp={kp:.4f} ki={ki:.3f} -> depassement {dep:.1f} %, "
+              f"etabli en {etab:.2f} s, ondulation {ond:.1f} %")
       resultats["gains"] = dict(kp=kp, ki=ki, kd=0.0)
 
       # ---- bilan -----------------------------------------------------------
