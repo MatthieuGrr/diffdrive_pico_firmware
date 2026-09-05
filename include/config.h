@@ -167,11 +167,21 @@
 /* ------------------------------------------------------------------------ */
 /*
  * Erreur en ticks/s, sortie en unites de rapport cyclique (+/- DUTY_MAX).
- * Ces valeurs ne sont que des points de depart : le reglage se fait a chaud
- * avec la commande 'k' en observant le mode de test t 4.
+ *
+ * MESURE au sol, robot a son poids final, par tools/tune_pid.py.
+ * Modele identifie :  roue G gain 3.813, tau 54 ms, zone morte duty 64
+ *                     roue D gain 3.670, tau 62 ms, zone morte duty 70
+ * Reponse obtenue :   depassement 2,3 %, montee a 1500 ticks/s en 0,14 s,
+ *                     erreur statique sous 1,6 %, sans agitation de commande.
+ *
+ * Reglage PRUDENT : la recherche visait 8 % de depassement et s'est arretee
+ * a 2,3 %, faute d'avoir pu explorer plus ferme — des perturbations
+ * mecaniques pendant les essais faussaient la mesure. Il reste donc de la
+ * marge si vous voulez une reponse plus vive, une fois le robot roulant sans
+ * accrocher. Relancer l'outil suffit.
  */
-#define PID_KP_DEFAULT          0.12f
-#define PID_KI_DEFAULT          0.60f
+#define PID_KP_DEFAULT          0.1172f
+#define PID_KI_DEFAULT          0.6511f
 #define PID_KD_DEFAULT          0.0f
 
 /*
@@ -186,7 +196,7 @@
  * constante unique est donc legitime. Valeur retenue legerement sous la
  * moyenne : mieux vaut que l'integrateur ajoute que retranche.
  */
-#define PID_KFF                 0.26f
+#define PID_KFF                 0.267f
 
 /* ------------------------------------------------------------------------ */
 /* Securite                                                                  */
