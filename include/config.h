@@ -168,19 +168,25 @@
 /*
  * Erreur en ticks/s, sortie en unites de rapport cyclique (+/- DUTY_MAX).
  *
- * MESURE au sol, robot a son poids final, par tools/tune_pid.py.
- * Modele identifie :  roue G gain 3.806, tau 67 ms, zone morte duty 67
- *                     roue D gain 3.753, tau 61 ms, zone morte duty 85
- * Reponse obtenue :   depassement 6,1 %, etablissement 0,12 a 0,48 s selon
- *                     la roue et le sens, erreur statique sous 1 %,
- *                     ondulation 1,7 % — pas d'agitation de commande.
+ * MESURE au sol, robot a son poids final, alimentation etablie, par
+ * tools/tune_pid.py.
+ * Modele identifie :  roue G gain 3.798, tau 67 ms, zone morte duty 64
+ *                     roue D gain 3.687, tau 61 ms, zone morte duty 73
+ * Reponse obtenue :   depassement 6,5 %, etablissement 0,20 s, erreur
+ *                     statique sous 1,2 %, ondulation 2,0 %.
  *
- * La recherche a converge par encadrement : x1.32 conforme, x1.51 trop
- * nerveux, intervalle referme. On est donc pres de la limite utile, pas en
- * deca par manque de mesures comme lors de la seance precedente.
+ * Recherche convergee par encadrement : x1.35 conforme, x1.52 trop nerveux,
+ * intervalle referme. Deux seances independantes donnent kp a 2,6 % pres et
+ * ki a 2,7 % pres, et les gains identifies concordent a 0,4 % (roue G) et
+ * 2 % (roue D) : le resultat est reproductible, pas un coup de chance.
+ *
+ * L'alimentation est une batterie d'outillage 20 V, soit ~18 V nominaux
+ * contre 24 V de specification moteur. Les 149 a 153 tr/min mesures pour
+ * 170 annonces sont donc normaux, et meme meilleurs que les 75-83 %
+ * attendus du rapport de tension.
  */
-#define PID_KP_DEFAULT          0.1731f
-#define PID_KI_DEFAULT          0.7750f
+#define PID_KP_DEFAULT          0.1777f
+#define PID_KI_DEFAULT          0.7959f
 #define PID_KD_DEFAULT          0.0f
 
 /*
@@ -195,7 +201,7 @@
  * constante unique est donc legitime. Valeur retenue legerement sous la
  * moyenne : mieux vaut que l'integrateur ajoute que retranche.
  */
-#define PID_KFF                 0.265f
+#define PID_KFF                 0.267f
 
 /* ------------------------------------------------------------------------ */
 /* Securite                                                                  */
