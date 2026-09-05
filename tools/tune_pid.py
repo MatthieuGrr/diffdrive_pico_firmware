@@ -116,6 +116,46 @@ def tenir(cmd, duree):
 def repos(d=0.6):
     env("s"); time.sleep(d); frames()
 
+def position():
+    """Deplacement moyen des deux roues, en ticks."""
+    f = frames()
+    fin = time.time() + 0.5
+    while not f and time.time() < fin:
+        f = frames(); time.sleep(0.005)
+    return ((f[-1][1] + f[-1][2]) / 2.0) if f else None
+
+
+def recentrer(origine, seuil=700, tmax=6.0):
+    """Ramene le robot vers son point de depart.
+
+    Indispensable : un aller-retour ne se compense pas, les deux roues n'ayant
+    ni la meme zone morte ni le meme gain. La derive s'accumule et finit par
+    sortir le robot de la zone degagee, ou au bout de sa rallonge USB — ce qui
+    se lit comme une chute de vitesse en plein palier et fausse la mesure.
+    Un reglage complet fait parcourir plus de six metres au robot."""
+    p0 = position()
+    if p0 is None:
+        return 0.0
+    net = p0 - origine
+    if abs(net) < seuil:
+        return net
+    log(f"        recentrage : {net:+.0f} ticks de derive, retour au depart")
+    d = -350 if net > 0 else 350
+    fin = time.time() + tmax; dernier = 0.0
+    while time.time() < fin:
+        if time.time() - dernier > 0.10:
+            env(f"o {d} {d}"); dernier = time.time()
+        f = frames()
+        if f:
+            net = (f[-1][1] + f[-1][2]) / 2.0 - origine
+            if (d > 0 and net > -seuil / 3) or (d < 0 and net < seuil / 3):
+                break
+        time.sleep(0.004)
+    env("s"); time.sleep(0.3); frames()
+    attendre_arret()
+    return net
+
+
 def attendre_arret(seuil=25, tmax=4.0):
     """Coupe et ATTEND l'arret reel des deux roues.
 
@@ -606,7 +646,13 @@ def main():
       # sur ce robot : 2,3 -> 7,1 -> 12,2 -> 6,5 -> 9,5 -> 14,7 -> 8,3 -> 11,9 %.
       # Un encadrement ne peut pas osciller : chaque essai retrecit l'intervalle.
       m = 1.0; bas = haut = None; meilleur = None
+      attendre_arret()
+      origine = position() or 0.0
+      log("    position de depart relevee — le robot y revient TOUT SEUL entre")
+      log("    chaque essai. NE PAS le toucher pendant la seance : un")
+      log("    repositionnement a la main tombe pendant une mesure et la ruine.")
       for it in range(9):
+          recentrer(origine)
           kp, ki = base_kp * m, base_ki * m
           r = essai(kp, ki)
           if r is None:
