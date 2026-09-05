@@ -28,3 +28,6 @@ test/a.out
 # .vscode/ est VOLONTAIREMENT suivi : la configuration generee par l'extension
 # Raspberry Pi Pico n'utilise que ${userHome} et ${command:...}, elle est donc
 # portable et evite a quiconque clone le depot de tout reconfigurer.
+
+# Rapport produit par tools/tune_pid.py
+reglage_pid.html

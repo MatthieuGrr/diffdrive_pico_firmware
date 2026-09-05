@@ -19,9 +19,13 @@ de depart, l'excursion reste de l'ordre de deux tours de roue.
 Securite : 's' est envoye sur toute sortie, y compris interruption. Si ce
 script meurt, le chien de garde de 300 ms du firmware coupe les PWM.
 """
-import serial, time, math, functools, operator, signal, sys, json
+import serial, time, math, functools, operator, signal, sys, json, os
+import rapport
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 PORT        = "/dev/ttyACM0"
+RAPPORT     = "reglage_pid.html"       # graphiques de toutes les mesures
 DUTIES      = [300, 500, 700, 900]   # niveaux d'identification
 STEP_HOLD   = 0.9                    # duree d'un echelon, secondes
 DEAD_MAX    = 320                    # borne du balayage de zone morte
@@ -195,6 +199,161 @@ def regression(pts):
     b = (sv - a * su) / n
     return a, (-b / a if a else None)
 
+
+# =========================================================================
+def generer_rapport(res, chemin):
+    """Assemble le rapport HTML. Tolerant a un run interrompu : chaque section
+    n'est produite que si les donnees correspondantes existent."""
+    import html as _h
+    S, SD = rapport.SERIE, rapport.SERIE_D
+    Ra, RaD = rapport.RAMPE, rapport.RAMPE_D
+    sections = []
+
+    # --- resume ----------------------------------------------------------
+    g = res.get("gains"); mod = res.get("modele")
+    if g or mod:
+        dl = []
+        if mod:
+            for n in ("G", "D"):
+                if n in mod:
+                    dl.append((f"Roue {n} — gain",
+                               f"{mod[n]['K']:.3f} ticks/s par unite de duty"))
+                    dl.append((f"Roue {n} — constante de temps",
+                               f"{1000*mod[n]['tau']:.0f} ms"))
+        if res.get("zone_morte"):
+            for n in ("G", "D"):
+                if res["zone_morte"].get(n):
+                    dl.append((f"Roue {n} — zone morte",
+                               f"duty {res['zone_morte'][n]}"))
+        if g:
+            dl.append(("Gains retenus",
+                       f"kp {g['kp']:.4f} · ki {g['ki']:.4f} · kd 0"))
+        it = res.get("iterations")
+        if it:
+            dl.append(("Resultat final",
+                       f"depassement {it[-1]['dep']:.1f} % · "
+                       f"etabli en {it[-1]['etab']:.2f} s"))
+        corps = "".join(f"<dt>{_h.escape(a)}</dt><dd>{_h.escape(b)}</dd>"
+                        for a, b in dl)
+        bloc = f'<div class="res"><dl>{corps}</dl></div>'
+        if g:
+            bloc += ('<pre>' + _h.escape(
+                f"#define PID_KP_DEFAULT          {g['kp']:.4f}f\n"
+                f"#define PID_KI_DEFAULT          {g['ki']:.4f}f\n"
+                f"#define PID_KD_DEFAULT          0.0f\n"
+                + (f"#define PID_KFF                 {res['kff_reco']:.3f}f"
+                   if res.get("kff_reco") else "")) + '</pre>')
+        sections.append(("", [bloc]))
+
+    # --- reponses indicielles --------------------------------------------
+    cs = res.get("courbes_step") or []
+    if cs:
+        blocs = []
+        for nom in ("G", "D"):
+            duties = sorted({c["duty"] for c in cs
+                             if c["roue"] == nom and c["duty"] > 0})
+            series = []
+            for k, d in enumerate(duties[:4]):
+                c = next(x for x in cs if x["roue"] == nom and x["duty"] == d)
+                series.append(dict(nom=f"duty {d}", couleur=Ra[k],
+                                   couleur_sombre=RaD[k], etiquette=True,
+                                   pts=list(zip(c["t"], c["v"]))))
+            for k, d in enumerate(duties[:4]):
+                c = next(x for x in cs if x["roue"] == nom and x["duty"] == d)
+                series.append(dict(nom=f"modele {d}", couleur=Ra[k],
+                                   couleur_sombre=RaD[k], tirets=True,
+                                   cache_legende=True,
+                                   pts=list(zip(c["t"], c["vm"]))))
+            if series:
+                blocs.append(rapport.graphe_lignes(
+                    f"Reponse indicielle en boucle ouverte — roue {nom}",
+                    "trait plein : vitesse mesuree · tirets : modele ajuste, "
+                    "passe par le meme filtre que le firmware",
+                    series, "temps (s)", "vitesse (ticks/s)", ident=True))
+        sections.append(("Identification du modele", blocs))
+
+    # --- caracteristique statique ----------------------------------------
+    if mod and res.get("statique"):
+        series = []
+        for k, nom in enumerate(("G", "D")):
+            pts = res["statique"].get(nom) or []
+            if not pts:
+                continue
+            K, u0 = mod[nom]["K"], mod[nom]["u0"]
+            xmax = max(x for x, _ in pts)
+            series.append(dict(nom=f"roue {nom}", couleur=S[k],
+                               couleur_sombre=SD[k], pts=pts,
+                               droite=[(u0, 0.0), (xmax, K * (xmax - u0))],
+                               zm=u0))
+        if series:
+            sections.append(("Caracteristique statique", [rapport.graphe_nuage(
+                "Vitesse etablie en fonction du rapport cyclique",
+                "la droite est la regression ; son intersection avec l'axe "
+                "donne la zone morte extrapolee (cercle creux)",
+                series, "rapport cyclique", "vitesse etablie (ticks/s)",
+                ident=True)]))
+
+    # --- zone morte -------------------------------------------------------
+    zc = res.get("courbes_zm") or {}
+    if any(zc.values()):
+        series = []
+        for k, nom in enumerate(("G", "D")):
+            if zc.get(nom):
+                series.append(dict(nom=f"roue {nom}", couleur=S[k],
+                                   couleur_sombre=SD[k], pts=zc[nom]))
+        sections.append(("Zone morte", [rapport.graphe_nuage(
+            "Deplacement obtenu a chaque palier de rapport cyclique",
+            "en charge, au sol. Le balayage s'arrete au premier mouvement franc.",
+            series, "rapport cyclique", "ticks parcourus", ident=True)]))
+
+    # --- auto-reglage ------------------------------------------------------
+    its = res.get("iterations") or []
+    if its:
+        blocs = []
+        for nom in ("G", "D"):
+            choisies = its if len(its) <= 4 else [its[0], its[len(its)//3],
+                                                  its[2*len(its)//3], its[-1]]
+            series = []
+            for k, itr in enumerate(choisies):
+                c = next((x for x in itr["courbes"] if x["roue"] == nom), None)
+                if not c:
+                    continue
+                series.append(dict(nom=f"iter. {itr['n']}", couleur=Ra[k],
+                                   couleur_sombre=RaD[k], etiquette=True,
+                                   pts=list(zip(c["t"], c["v"]))))
+            if series:
+                blocs.append(rapport.graphe_lignes(
+                    f"Reponse en boucle fermee — roue {nom}",
+                    f"echelon de consigne a {its[0]['sp']} ticks/s ; "
+                    "chaque courbe est une iteration de l'auto-reglage",
+                    series, "temps (s)", "vitesse (ticks/s)",
+                    reperes=[(its[0]["sp"], "consigne")], ident=True))
+        if len(its) > 1:
+            blocs.append(rapport.graphe_lignes(
+                "Convergence — depassement",
+                "critere vise : au plus 8 %",
+                [dict(nom="depassement", couleur=S[0], couleur_sombre=SD[0],
+                      pts=[(i["n"], i["dep"]) for i in its])],
+                "iteration", "depassement (%)", h=210,
+                reperes=[(8.0, "cible")]))
+            blocs.append(rapport.graphe_lignes(
+                "Convergence — temps d'etablissement",
+                "duree pour entrer et rester dans la bande +/-5 %",
+                [dict(nom="etablissement", couleur=S[1], couleur_sombre=SD[1],
+                      pts=[(i["n"], i["etab"]) for i in its])],
+                "iteration", "temps (s)", h=210))
+        sections.append(("Auto-reglage sur le robot", blocs))
+
+    if not sections:
+        sections.append(("", ["<p class=vide>Aucune mesure exploitable.</p>"]))
+    meta = (f"Mesure du {time.strftime('%d/%m/%Y a %H:%M')} — "
+            f"robot au sol, {len(res.get('courbes_step') or [])} echelons "
+            f"d'identification, {len(its)} iteration(s) d'auto-reglage.")
+    with open(chemin, "w", encoding="utf-8") as f:
+        f.write(rapport.page("Reglage du PID de vitesse", meta, sections))
+    return chemin
+
+
 # =========================================================================
 def main():
   resultats = {}
@@ -226,6 +385,7 @@ def main():
       # ---- 1a. zone morte en charge ---------------------------------------
       log("\n=== 1a. ZONE MORTE (au sol, en charge) ===")
       zm = {}
+      resultats["courbes_zm"] = {"G": [], "D": []}
       for nom, i in (("G", 0), ("D", 1)):
           seuil = None
           for d in range(20, DEAD_MAX + 1, 20):
@@ -242,7 +402,9 @@ def main():
                   if g: last = g[-1]
                   time.sleep(0.004)
               repos(0.25)
-              if abs(last[1 + i] - e0[1 + i]) > 3:   # marge sur le bruit
+              bouge = last[1 + i] - e0[1 + i]
+              resultats["courbes_zm"][nom].append((d, bouge))
+              if abs(bouge) > 3:   # marge sur le bruit
                   seuil = d; break
           zm[nom] = seuil
           log(f"    roue {nom} : premier mouvement a duty {seuil}")
@@ -252,6 +414,7 @@ def main():
       log("\n=== 1b. REPONSES INDICIELLES (alternees, retour au point de depart) ===")
       modeles = {"G": [], "D": []}
       vss = {"G": [], "D": []}
+      resultats["courbes_step"] = []
       for duty in DUTIES:
           for sgn in (+1, -1):
               d = duty * sgn
@@ -264,6 +427,21 @@ def main():
                   sous = [(e[0], e[col], e[col]) for e in ech]
                   m = ajuster(sous, d)
                   if not m: continue
+                  # courbe mesuree + modele ajuste, ramenes au meme filtre que
+                  # celui du firmware pour une comparaison honnete
+                  t0f = ech[0][0]
+                  tt = [(e[0] - t0f) / 1000.0 for e in ech]
+                  vv = [e[3 if nom == "G" else 4] for e in ech]
+                  vm, f = [], 0.0
+                  for t in tt:
+                      dtm = t - m["theta"]
+                      brut = (m["K"] * d * (1 - math.exp(-dtm / m["tau"]))
+                              if dtm > 0 else 0.0)
+                      f += ALPHA * (brut - f)
+                      vm.append(round(f, 1))
+                  resultats["courbes_step"].append(
+                      dict(roue=nom, duty=d, t=[round(x, 3) for x in tt],
+                           v=vv, vm=vm))
                   modeles[nom].append(m)
                   # VALEURS ABSOLUES : avec les duty signes, la symetrie des
                   # points +/-u force l'ordonnee a l'origine a zero, ce qui
@@ -282,6 +460,7 @@ def main():
           taus = sorted(m["tau"] for m in modeles[nom])
           tau = taus[len(taus) // 2]                       # mediane, robuste
           a, u0 = regression(vss[nom])
+          resultats.setdefault("statique", {})[nom] = sorted(vss[nom])
           modele[nom] = dict(tau=tau, K=a, u0=u0)
           log(f"    roue {nom} : gain {a:.3f} ticks/s par unite de duty | "
               f"tau {1000*tau:.0f} ms | zone morte extrapolee duty {u0:.0f}")
@@ -316,7 +495,7 @@ def main():
           """Applique les gains, fait un aller-retour, renvoie le pire des deux
           roues en depassement et en temps d'etablissement."""
           env(f"k {kp:.5f} {ki:.5f} 0"); time.sleep(0.15)
-          dep = etab = 0.0; det = []
+          dep = etab = 0.0; det = []; courbes = []
           for sgn in (+1, -1):
               sp = VERIF_SP * sgn
               attendre_arret()
@@ -335,7 +514,10 @@ def main():
                   err = 100*(abs(fin_v)-abs(sp))/abs(sp)
                   dep = max(dep, d); etab = max(etab, te)
                   det.append((sgn, nom, d, te, err))
-          return dep, etab, det
+                  if sgn > 0:
+                      courbes.append(dict(roue=nom,
+                                          t=[round(x, 3) for x in t], v=v))
+          return dep, etab, det, courbes
 
       DEP_CIBLE = 8.0
       meilleur = None
@@ -343,7 +525,10 @@ def main():
           r = essai(kp, ki)
           if r is None:
               log("    trop peu de trames — liaison instable"); break
-          dep, etab, det = r
+          dep, etab, det, courbes = r
+          resultats.setdefault("iterations", []).append(
+              dict(n=it + 1, kp=kp, ki=ki, dep=dep, etab=etab,
+                   sp=VERIF_SP, courbes=courbes))
           log(f"    iteration {it+1} : kp={kp:.4f} ki={ki:.3f} -> "
               f"depassement {dep:+5.1f} %  etabli en {etab:.2f} s")
           for sgn, nom, d, te, err in det:
@@ -387,6 +572,13 @@ def main():
         for _ in range(3):
             env("s"); time.sleep(0.1)
         log("moteurs coupes.")
+        # Le rapport est produit meme si le run a ete interrompu : une mesure
+        # partielle vaut mieux que rien quand on est au milieu d'une piece.
+        try:
+            c = generer_rapport(resultats, RAPPORT)
+            log(f"rapport graphique : {os.path.abspath(c)}")
+        except Exception as e:
+            log(f"rapport non genere : {e}")
         try:
             with open("/tmp/tune_pid_resultats.json", "w") as f:
                 json.dump(resultats, f, indent=2)

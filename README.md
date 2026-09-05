@@ -256,6 +256,12 @@ Le réglage doit se faire **au sol, au poids final** : sur cales le moteur
 n'entraîne que l'inertie de la roue, et les gains obtenus sont inutilisables
 en charge.
 
+En sortie, `reglage_pid.html` : un fichier autonome, sans dépendance, qui trace
+toutes les mesures — réponses indicielles avec le modèle ajusté superposé,
+caractéristique statique et sa régression, zone morte, et une courbe par
+itération de l'auto-réglage. Chaque graphique est doublé d'un tableau de
+valeurs et réagit au survol. Il est produit même si le réglage est interrompu.
+
 L'outil se valide sans robot, sur un firmware simulé à paramètres connus :
 
 ```bash
