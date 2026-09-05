@@ -90,6 +90,11 @@ target_compile_definitions(diffdrive_pico_firmware PRIVATE
         # autre carte. Utile pour une regle udev cote Pi.
         USBD_PRODUCT="diffdrive_pico_firmware"
         USBD_MANUFACTURER="MatthieuGrr"
+        # Le SDK plafonne les chaines de descripteur a USBD_DESC_STR_MAX - 1
+        # caracteres, soit 19 par defaut : sans cela le nom est tronque en
+        # "diffdrive_pico_firm" et une regle udev qui cite le nom complet ne
+        # correspond a rien. Maximum autorise : 127.
+        USBD_DESC_STR_MAX=32
 )
 
 # Les en-tetes du firmware vivent dans include/. L'en-tete genere par pioasm

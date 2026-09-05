@@ -579,10 +579,15 @@ def main():
                   # moyenne mais la commande s'agite, et sur un vrai moteur cela
                   # s'entend et se paie en courant. Les trames ne portent pas le
                   # rapport cyclique, l'ondulation de vitesse en est le temoin.
-                  q = v[-25:] if len(v) >= 25 else v
-                  moy = sum(q)/len(q)
-                  ec = math.sqrt(sum((x-moy)**2 for x in q)/len(q))
-                  ond = max(ond, 100*ec/abs(sp))
+                  # ECART INTERQUARTILE. L'ecart-type confond un decrochage
+                  # isole (le robot accroche) avec une commande qui chasse la
+                  # quantification ; l'ecart absolu median, lui, tombe a zero
+                  # sur une oscillation carree, qui est bimodale. L'IQR traite
+                  # correctement les deux : il ignore quelques points extremes
+                  # et voit une oscillation soutenue.
+                  q = sorted(v[-25:] if len(v) >= 25 else v)
+                  iqr = q[(3*len(q))//4] - q[len(q)//4]
+                  ond = max(ond, 100*abs(iqr)/abs(sp))
                   dep = max(dep, d); etab = max(etab, te)
                   det.append((sgn, nom, d, te, err))
                   if sgn > 0:
@@ -591,7 +596,7 @@ def main():
           return dep, etab, det, courbes, ond
 
       DEP_CIBLE = 8.0
-      OND_MAX   = 4.0        # ondulation de vitesse toleree en regime etabli, %
+      OND_MAX   = 6.0        # ondulation toleree (ecart absolu median), %
       base_kp, base_ki = kp, ki
 
       # Recherche par ENCADREMENT sur un multiplicateur unique applique aux
@@ -622,11 +627,14 @@ def main():
           # trop de depassement demande d'assouplir, ne pas atteindre la
           # consigne demande au contraire de durcir. Les confondre fait
           # descendre le gain alors que la boucle est deja trop molle.
-          if dep > DEP_CIBLE or ond > OND_MAX:
+          if dep > DEP_CIBLE:
               haut = m
               m = (bas + m) / 2 if bas is not None else m * 0.55
-              log(f"        -> {'depassement excessif' if dep > DEP_CIBLE else 'commande trop agitee'}"
-                  f", on assouplit (x{m:.2f})")
+              log(f"        -> depassement excessif, on assouplit (x{m:.2f})")
+          elif etabli and ond > OND_MAX:
+              haut = m
+              m = (bas + m) / 2 if bas is not None else m * 0.55
+              log(f"        -> commande trop agitee, on assouplit (x{m:.2f})")
           elif not etabli:
               m = m * 1.7 if haut is None else (m + haut) / 2
               log(f"        -> consigne pas atteinte, on durcit (x{m:.2f})")
