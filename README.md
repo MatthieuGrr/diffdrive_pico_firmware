@@ -230,6 +230,38 @@ coûterait le plus cher à diagnostiquer au banc :
 `protocol.c`, `motors.c` et `pid.c` sont compilés **tels quels** pour l'hôte ;
 seuls les accès matériel sont bouchonnés (`test/stubs/`).
 
+## Réglage automatique du PID
+
+```bash
+python3 tools/tune_pid.py        # robot AU SOL, espace dégagé, ~4 min
+```
+
+Identifie le modèle de chaque roue puis règle les gains par la mesure :
+
+1. **contrôle préalable** — refuse de continuer si le binaire chargé n'est pas
+   celui du dépôt (vérifié par le signe de la réponse) ;
+2. **identification en boucle ouverte** — échelons **alternés avant/arrière**,
+   donc le robot revient à son point de départ ; excursion de l'ordre d'un
+   demi-mètre. Le modèle est ajusté sur la réponse en **position** : les
+   compteurs cumulés sont exacts, alors que dériver amplifierait la
+   quantification de 50 ticks/s, et cela évite de déconvoluer le filtre du
+   firmware ;
+3. **auto-réglage itératif** — la formule IMC de manuel donne ici jusqu'à 45 %
+   de dépassement, parce qu'elle suppose qu'il n'y a pas d'anticipation : avec
+   `PID_KFF`, l'anticipation et l'intégrateur fournissent tous deux le régime
+   établi. Le script part donc d'un réglage volontairement mou et durcit
+   d'après le dépassement **mesuré**, jusqu'à convergence.
+
+Le réglage doit se faire **au sol, au poids final** : sur cales le moteur
+n'entraîne que l'inertie de la roue, et les gains obtenus sont inutilisables
+en charge.
+
+L'outil se valide sans robot, sur un firmware simulé à paramètres connus :
+
+```bash
+python3 test/dryrun_tune.py      # ~2 min
+```
+
 ## Première mise sous tension
 
 1. **À vide, moteurs non alimentés.** Flash en BOOTSEL, USB-UART sur GP0/GND à
