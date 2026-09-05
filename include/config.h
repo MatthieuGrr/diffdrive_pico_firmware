@@ -170,23 +170,24 @@
  *
  * MESURE au sol, robot a son poids final, alimentation etablie, par
  * tools/tune_pid.py.
- * Modele identifie :  roue G gain 3.798, tau 67 ms, zone morte duty 64
- *                     roue D gain 3.687, tau 61 ms, zone morte duty 73
- * Reponse obtenue :   depassement 6,5 %, etablissement 0,20 s, erreur
- *                     statique sous 1,2 %, ondulation 2,0 %.
+ * Modele identifie :  roue G gain 3.800, tau 66 ms, zone morte duty 66
+ *                     roue D gain 3.731, tau 58 ms, zone morte duty 77
+ * Reponse obtenue :   depassement 6,1 %, etablissement 0,18 s, erreur
+ *                     statique sous 0,9 %, ondulation 1,4 a 1,9 %.
  *
  * Recherche convergee par encadrement : x1.35 conforme, x1.52 trop nerveux,
- * intervalle referme. Deux seances independantes donnent kp a 2,6 % pres et
- * ki a 2,7 % pres, et les gains identifies concordent a 0,4 % (roue G) et
- * 2 % (roue D) : le resultat est reproductible, pas un coup de chance.
+ * intervalle referme. TROIS seances independantes concordent : gain de la
+ * roue G a 0,2 % pres (3.806 / 3.798 / 3.800), kp a 2,6 % et kff a 0,8 %.
+ * Le modele decrit donc reellement la machine, ce n'est pas un ajustement
+ * de circonstance.
  *
  * L'alimentation est une batterie d'outillage 20 V, soit ~18 V nominaux
  * contre 24 V de specification moteur. Les 149 a 153 tr/min mesures pour
  * 170 annonces sont donc normaux, et meme meilleurs que les 75-83 %
  * attendus du rapport de tension.
  */
-#define PID_KP_DEFAULT          0.1777f
-#define PID_KI_DEFAULT          0.7959f
+#define PID_KP_DEFAULT          0.1749f
+#define PID_KI_DEFAULT          0.8074f
 #define PID_KD_DEFAULT          0.0f
 
 /*
@@ -201,7 +202,7 @@
  * constante unique est donc legitime. Valeur retenue legerement sous la
  * moyenne : mieux vaut que l'integrateur ajoute que retranche.
  */
-#define PID_KFF                 0.267f
+#define PID_KFF                 0.266f
 
 /* ------------------------------------------------------------------------ */
 /* Securite                                                                  */
