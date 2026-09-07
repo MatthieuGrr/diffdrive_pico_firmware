@@ -59,7 +59,7 @@ typedef struct {
 bool bno055_init(void);
 
 /* Une lecture en rafale de 18 octets (accel, mag, gyro) — une seule
- * transaction, environ 430 us a 400 kHz. Met les valeurs a zero en cas
+ * transaction, environ 1.7 ms a 100 kHz. Met les valeurs a zero en cas
  * d'echec. */
 void bno055_read(void);
 

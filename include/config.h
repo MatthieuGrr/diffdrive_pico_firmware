@@ -44,7 +44,9 @@
 #define IMU_I2C                 i2c0
 #define PIN_I2C_SDA             16u
 #define PIN_I2C_SCL             17u
-#define IMU_I2C_BAUD            400000u
+/* 100 kHz et pas 400 : les pull-ups en place sont trop faibles pour tenir
+ * les fronts montants a 400 kHz, l'IMU decrochait. */
+#define IMU_I2C_BAUD            100000u
 
 /* UART0 — logs de debug uniquement. JAMAIS le protocole robot.              */
 #define LOG_UART                uart0
@@ -238,8 +240,10 @@
 #define BNO055_RESET_AT_BOOT    1
 
 /* Delai maximal d'une transaction I2C. Garantit que la boucle de controle   */
-/* ne se bloque jamais sur un bus mort.                                      */
-#define I2C_TIMEOUT_US          3000u
+/* ne se bloque jamais sur un bus mort. A 100 kHz la rafale de 18 octets     */
+/* occupe deja ~1.7 ms : 5 ms laisse de la marge sans menacer les 20 ms de   */
+/* la periode de controle.                                                   */
+#define I2C_TIMEOUT_US          5000u
 
 /* Tentative de redetection quand l'IMU est absente, en periodes de controle.*/
 /* 250 * 20 ms = 5 s.                                                        */
