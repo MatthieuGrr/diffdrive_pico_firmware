@@ -14,6 +14,8 @@
 #include "testmodes.h"
 #include "log.h"
 
+static void emit_line(char *line, int n, size_t cap);
+
 static char   s_rx[RX_LINE_MAX];
 static size_t s_rx_len;
 static bool   s_rx_overflow;      /* ligne trop longue : on jette jusqu'au \n */
@@ -110,6 +112,18 @@ static void exec_line(char *line)
     case 's':                               /* arret immediat */
         if (at_end(p)) {
             robot_failsafe();
+            /* 's' est aussi l'acquittement des defauts verrouilles. */
+            robot_clear_faults();
+            ok = true;
+        }
+        break;
+
+    case 'i':                               /* identification */
+        if (at_end(p)) {
+            char out[TX_LINE_MAX];
+            int n = snprintf(out, sizeof(out), "I %s %s %d",
+                             FW_NAME, FW_VERSION, PROTO_VERSION);
+            emit_line(out, n, sizeof(out));
             ok = true;
         }
         break;
@@ -204,6 +218,26 @@ void protocol_poll(void)
 /* Emission de la trame d'etat                                               */
 /* ------------------------------------------------------------------------ */
 
+/* Ajoute " <chk>" a une ligne deja formatee et l'emet, terminee par \n. */
+static void emit_line(char *line, int n, size_t cap)
+{
+    if (n <= 0) return;
+    if (n > (int)cap - 4) n = (int)cap - 4;     /* paranoia */
+
+    uint8_t chk = 0;
+    for (int i = 0; i < n; i++) chk ^= (uint8_t)line[i];
+
+    n += snprintf(line + n, cap - (size_t)n, " %02X", chk);
+
+    /* stdio_put_string ecrit directement dans le pilote : ni la mise en
+     * tampon de la libc, ni l'analyse de format de printf, ni traduction
+     * CR/LF (troisieme argument a false). Le \n final est ajoute par le
+     * deuxieme argument. L'ecriture est bornee par
+     * PICO_STDIO_USB_STDOUT_TIMEOUT_US : si l'hote ne lit pas, les octets
+     * sont abandonnes et la boucle 50 Hz continue. */
+    stdio_put_string(line, n, true, false);
+}
+
 void protocol_send_state(uint32_t t_ms)
 {
     const encoders_t *e = encoders_state();
@@ -211,26 +245,13 @@ void protocol_send_state(uint32_t t_ms)
 
     char line[TX_LINE_MAX];
     int n = snprintf(line, sizeof(line),
-                     "S %lu %ld %ld %ld %ld %d %d %d %d %d %d",
+                     "S %lu %ld %ld %ld %ld %d %d %d %d %d %d %ld %ld %lu",
                      (unsigned long)t_ms,
                      (long)e->count[ENC_L], (long)e->count[ENC_R],
                      (long)e->vel_i[ENC_L], (long)e->vel_i[ENC_R],
                      m->gyro[0],  m->gyro[1],  m->gyro[2],
-                     m->accel[0], m->accel[1], m->accel[2]);
-
-    if (n <= 0) return;
-    if (n > (int)sizeof(line) - 4) n = (int)sizeof(line) - 4;   /* paranoia */
-
-    uint8_t chk = 0;
-    for (int i = 0; i < n; i++) chk ^= (uint8_t)line[i];
-
-    n += snprintf(line + n, sizeof(line) - (size_t)n, " %02X", chk);
-
-    /* stdio_put_string ecrit directement dans le pilote : ni la mise en
-     * tampon de la libc, ni l'analyse de format de printf, ni traduction
-     * CR/LF (troisieme argument a false). Le \n final est ajoute par le
-     * deuxieme argument. L'ecriture est bornee par
-     * PICO_STDIO_USB_STDOUT_TIMEOUT_US : si le Pi ne lit pas, les octets
-     * sont abandonnes et la boucle 50 Hz continue. */
-    stdio_put_string(line, n, true, false);
+                     m->accel[0], m->accel[1], m->accel[2],
+                     (long)g_robot.vbat_mv, (long)g_robot.ibat_ma,
+                     (unsigned long)g_robot.flags);
+    emit_line(line, n, sizeof(line));
 }

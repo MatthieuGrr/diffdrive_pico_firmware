@@ -7,10 +7,11 @@
 #
 #   - le decodeur de quadrature PIO, simule instruction par instruction
 #   - le parseur de commandes et le checksum de la trame d'etat
-#   - la table de verite du DRV8871 dans les deux modes de decroissance
+#   - la table de verite du MDD10A et l'inhibition de securite
+#   - les protections batterie (surintensite, sous-tension) et l'INA226
 #   - l'anti-emballement du PID
 #
-# src/protocol.c, src/motors.c et src/pid.c sont compiles TELS QUELS pour
+# src/protocol.c, src/motors.c, src/pid.c et src/safety.c sont compiles TELS QUELS pour
 # l'hote ; seuls les acces materiel sont bouchonnes (test/stubs).
 set -u
 cd "$(dirname "$0")/.."
@@ -29,11 +30,11 @@ $CC $CFLAGS -o "$OUT/p" test/test_protocol.c src/protocol.c src/pid.c && "$OUT/p
 echo; echo "########## PID ##########"
 $CC $CFLAGS -o "$OUT/i" test/test_pid.c src/pid.c -lm && "$OUT/i" || rc=1
 
-for mode in DECAY_FAST DECAY_SLOW; do
-    echo; echo "########## moteurs — MOTOR_DECAY_MODE = $mode ##########"
-    $CC $CFLAGS -DMOTOR_DECAY_MODE=$mode -o "$OUT/m" test/test_motors.c src/motors.c -lm \
-        && "$OUT/m" || rc=1
-done
+echo; echo "########## moteurs — MDD10A ##########"
+$CC $CFLAGS -o "$OUT/m" test/test_motors.c src/motors.c -lm && "$OUT/m" || rc=1
+
+echo; echo "########## securite batterie et conversions INA226 ##########"
+$CC $CFLAGS -o "$OUT/s" test/test_safety.c src/safety.c && "$OUT/s" || rc=1
 
 echo
 if [ $rc -eq 0 ]; then echo "=== TOUS LES BANCS PASSENT ==="

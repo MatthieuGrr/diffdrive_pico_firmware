@@ -31,3 +31,6 @@ test/a.out
 
 # Rapport produit par tools/tune_pid.py
 reglage_pid.html
+
+# Caches Python
+__pycache__/

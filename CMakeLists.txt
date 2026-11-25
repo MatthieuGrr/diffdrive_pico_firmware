@@ -12,7 +12,7 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-# diffdrive_pico_firmware — firmware bas niveau d'une base differentielle ROS 2
+# diffdrive_pico_firmware — firmware bas niveau d'une base differentielle
 # Cible : Raspberry Pi Pico 2 (RP2350), pico-sdk 2.3.0
 
 cmake_minimum_required(VERSION 3.13)
@@ -51,12 +51,14 @@ add_executable(diffdrive_pico_firmware
         src/motors.c
         src/bno055.c
         src/pid.c
+        src/ina226.c
+        src/safety.c
         src/protocol.c
         src/testmodes.c
 )
 
 pico_set_program_name(diffdrive_pico_firmware "diffdrive_pico_firmware")
-pico_set_program_version(diffdrive_pico_firmware "1.0.0")
+pico_set_program_version(diffdrive_pico_firmware "2.0.0")
 
 # Decodeur de quadrature x4 : genere quadrature.pio.h
 pico_generate_pio_header(diffdrive_pico_firmware ${CMAKE_CURRENT_LIST_DIR}/pio/quadrature.pio)

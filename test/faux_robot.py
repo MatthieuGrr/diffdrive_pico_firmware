@@ -80,6 +80,10 @@ class FauxPico:
                 for q in self.pid: q.kp,q.ki,q.kd = float(p[1]),float(p[2]),float(p[3])
                 ok=True
             elif c=="t" and len(p)==2: ok=True
+            elif c=="i" and len(p)==1:
+                ch = "I diffdrive_pico_firmware 2.0.0 2"
+                ck = functools.reduce(operator.xor, ch.encode(), 0)
+                self.sortie += f"{ch} {ck:02X}\n".encode(); ok=True
         except ValueError: ok=False
         if ok: self.dernier_cmd = time.time()
     def _avance(self):
@@ -102,7 +106,8 @@ class FauxPico:
                 self.vf[i] += 0.5*(brut - self.vf[i])
             t_ms = int(self.prochain*1000)
             ch = (f"S {t_ms} {self.enc[0]} {self.enc[1]} "
-                  f"{int(round(self.vf[0]))} {int(round(self.vf[1]))} 0 0 0 0 0 0")
+                  f"{int(round(self.vf[0]))} {int(round(self.vf[1]))} 0 0 0 0 0 0 "
+                  f"19000 0 0")    # v2 : vbat_mv ibat_ma flags
             ck = functools.reduce(operator.xor, ch.encode(), 0)
             self.sortie += f"{ch} {ck:02X}\n".encode()
             self.prochain += dt

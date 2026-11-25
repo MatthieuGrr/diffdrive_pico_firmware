@@ -38,11 +38,13 @@ void encoders_update(float d){(void)d;}
 void encoders_init(void){}
 int32_t encoders_raw(int s){(void)s; return 0;}
 const bno055_t *bno055_state(void){ return &g_imu; }
-void motors_coast_all(void){}
+void motors_stop_all(void){}
 void motors_set(int s,int d){(void)s;(void)d;}
 int  motors_get(int s){(void)s; return 0;}
 void testmodes_enter(int m){ g_test_mode_arg=m; g_robot.test_mode=m; }
 void robot_failsafe(void){ g_failsafe_calls++; g_robot.ctrl_mode=CTRL_STOP; }
+static int g_clear_calls;
+void robot_clear_faults(void){ g_clear_calls++; }
 
 /* ---- utilitaires ---- */
 static int fails=0, total=0;
@@ -78,8 +80,14 @@ int main(void)
        g_robot.ol_duty[0]==-1000 && g_robot.ol_duty[1]==1000 && g_robot.ctrl_mode==CTRL_OPENLOOP);
     feed("o -5000 5000\n");
     ck("o : ecretage a +/-DUTY_MAX", g_robot.ol_duty[0]==-1000 && g_robot.ol_duty[1]==1000);
-    int fs=g_failsafe_calls; feed("s\n");
+    int fs=g_failsafe_calls, cl=g_clear_calls; feed("s\n");
     ck("s : arret immediat", g_failsafe_calls==fs+1);
+    ck("s : demande d'effacement des defauts", g_clear_calls==cl+1);
+    g_tx_len=0; g_tx[0]=0; feed("i\n");
+    { char want[96]; snprintf(want,sizeof want,"I %s %s %d ",FW_NAME,FW_VERSION,PROTO_VERSION);
+      ck("i : identification nom, version, version du protocole",
+         strncmp(g_tx,want,strlen(want))==0);
+      ck("i : reponse munie d'un checksum valide", verify_frame_like_the_pi(g_tx)); }
     int rc=g_reset_calls; feed("r\n");
     ck("r : remise a zero des compteurs", g_reset_calls==rc+1);
     feed("k 0.25 1.5 0.01\n");
@@ -110,6 +118,7 @@ int main(void)
         {"r 1\n","argument sur r"}, {"k 1 2\n","gain manquant"},
         {"t 9\n","mode de test hors plage"}, {"t -1\n","mode negatif"},
         {"t\n","mode manquant"}, {"o 1\n","une seule roue"},
+        {"i 2\n","argument sur i"},
     };
     for(unsigned i=0;i<sizeof bad/sizeof*bad;i++){
         g_robot.sp_ticks[0]=4242; g_robot.sp_ticks[1]=4242;
@@ -142,16 +151,18 @@ int main(void)
        g_robot.link_lost && g_robot.last_cmd_us==0);
 
     puts("\nTrame d'etat et checksum :");
-    struct { int32_t el,er,vl,vr; int16_t g[3],a[3]; uint32_t t; } cases[] = {
-        {0,0,0,0,{0,0,0},{0,0,0},0},
-        {1496,-1496,4362,-4362,{12,-34,56},{-78,910,-1011},123456},
-        {INT32_MAX,INT32_MIN,INT32_MAX,INT32_MIN,{32767,-32768,0},{32767,-32768,1},4294967295u},
+    struct { int32_t el,er,vl,vr; int16_t g[3],a[3]; uint32_t t; int32_t v,i; uint32_t f; } cases[] = {
+        {0,0,0,0,{0,0,0},{0,0,0},0,0,0,0},
+        {1496,-1496,4362,-4362,{12,-34,56},{-78,910,-1011},123456,19234,-1520,0x83},
+        {INT32_MAX,INT32_MIN,INT32_MAX,INT32_MIN,{32767,-32768,0},{32767,-32768,1},4294967295u,
+         INT32_MAX,INT32_MIN,0xFFFFFFFFu},
     };
     for(unsigned i=0;i<sizeof cases/sizeof*cases;i++){
         g_enc.count[0]=cases[i].el; g_enc.count[1]=cases[i].er;
         g_enc.vel_i[0]=cases[i].vl; g_enc.vel_i[1]=cases[i].vr;
         memcpy(g_imu.gyro,cases[i].g,sizeof g_imu.gyro);
         memcpy(g_imu.accel,cases[i].a,sizeof g_imu.accel);
+        g_robot.vbat_mv=cases[i].v; g_robot.ibat_ma=cases[i].i; g_robot.flags=cases[i].f;
         g_tx_len=0; protocol_send_state(cases[i].t);
         char lbl[256]; snprintf(lbl,sizeof lbl,"checksum verifiable cote Pi : %.*s",
                                 (int)strcspn(g_tx,"\n"), g_tx);
@@ -160,6 +171,18 @@ int main(void)
         else puts("  OK    trame terminee par un seul \\n, sans \\r");
         total++; if(strchr(g_tx,'\r')){fails++; puts("  ECHEC un \\r s'est glisse dans la trame");}
         else puts("  OK    aucun \\r dans la trame");
+        /* 16 jetons : S, 11 champs v1, vbat ibat flags, puis chk. */
+        { int nf=0; char b[512]; snprintf(b,sizeof b,"%s",g_tx);
+          for(char *t=strtok(b," \n");t;t=strtok(NULL," \n")) nf++;
+          long v=0,ii=0; unsigned long f=0; int ok=0;
+          { char c[512]; snprintf(c,sizeof c,"%s",g_tx); char *tok[20]; int k=0;
+            for(char *t=strtok(c," \n");t&&k<20;t=strtok(NULL," \n")) tok[k++]=t;
+            if(k==16){ v=strtol(tok[12],NULL,10); ii=strtol(tok[13],NULL,10);
+                       f=strtoul(tok[14],NULL,10); ok=1; } }
+          total++; if(nf!=16 || !ok || v!=(long)cases[i].v || ii!=(long)cases[i].i
+                     || f!=(unsigned long)cases[i].f){
+              fails++; printf("  ECHEC champs v2 (%d jetons) : %s", nf, g_tx); }
+          else puts("  OK    16 jetons, vbat_mv / ibat_ma / flags a leur place"); }
     }
 
     /* Un octet fausse doit invalider le checksum : preuve que le controle sert. */

@@ -1,8 +1,9 @@
 /*
- * diffdrive_pico_firmware — etage bas niveau d'une base differentielle ROS 2.
+ * diffdrive_pico_firmware — etage bas niveau d'une base differentielle.
  *
  * Cible : Raspberry Pi Pico 2 (RP2350, Cortex-M33), pico-sdk 2.3.0.
- * Maitre : Raspberry Pi 5, via une interface hardware_interface ros2_control.
+ * Hote : n'importe quel ordinateur parlant le protocole serie documente
+ * (Raspberry Pi 5 sous ROS 2, Jetson, PC...), via l'USB du Pico.
  *
  * ORGANISATION
  * ------------
@@ -40,6 +41,8 @@
 #include "encoders.h"
 #include "motors.h"
 #include "bno055.h"
+#include "ina226.h"
+#include "safety.h"
 #include "pid.h"
 #include "protocol.h"
 #include "testmodes.h"
@@ -61,7 +64,7 @@ static bool control_timer_cb(repeating_timer_t *t)
 
 void robot_failsafe(void)
 {
-    motors_coast_all();
+    motors_stop_all();
     g_robot.out_duty[0] = 0;
     g_robot.out_duty[1] = 0;
     g_robot.sp_ticks[0] = 0;
@@ -71,6 +74,86 @@ void robot_failsafe(void)
     g_robot.ctrl_mode   = CTRL_STOP;
     pid_reset(&g_robot.pid[0]);
     pid_reset(&g_robot.pid[1]);
+}
+
+static void safety_inputs(safety_in_t *in)
+{
+    const ina226_t *p = ina226_state();
+    in->ina_present      = p->present;
+    in->vbat_mv          = p->vbat_mv;
+    in->ibat_ma          = p->ibat_ma;
+    in->alert_fired      = ina226_alert_fired();
+    in->alert_pin_active = ina226_alert_pin_active();
+}
+
+void robot_clear_faults(void)
+{
+    if (g_robot.safety.latched == 0u) return;
+
+    /* Relit Mask/Enable : l'INA226 relache ALERT si le courant est revenu
+     * sous le seuil. */
+    (void)ina226_clear_alert();
+
+    safety_in_t in;
+    safety_inputs(&in);
+    uint32_t before = g_robot.safety.latched;
+    uint32_t left   = safety_try_clear(&g_robot.safety, &in);
+    if (left != before) {
+        LOG("[secu] defauts effaces par 's' : 0x%02lX -> 0x%02lX",
+            (unsigned long)before, (unsigned long)left);
+    }
+    if (left != 0u) {
+        LOG("[secu] defaut toujours present (cause active) : 0x%02lX, "
+            "I=%ld mA V=%ld mV", (unsigned long)left,
+            (long)in.ibat_ma, (long)in.vbat_mv);
+    }
+    /* La levee de l'inhibition se fait dans la boucle de controle, apres
+     * une nouvelle evaluation complete. */
+}
+
+/* Mesure batterie, decision de securite, et application. Appele a chaque
+ * periode de controle, AVANT le calcul des commandes moteur. */
+static void safety_step(uint32_t dt_ms)
+{
+    const ina226_t *p = ina226_state();
+    if (p->present) {
+        ina226_read();
+    } else {
+        static uint32_t retry = 0;
+        if (++retry >= INA_RETRY_TICKS) { retry = 0; ina226_retry(); }
+    }
+
+    safety_in_t in;
+    safety_inputs(&in);
+    uint32_t before = g_robot.safety.latched;
+    bool inhibit = safety_update(&g_robot.safety, &in, dt_ms);
+    uint32_t after = g_robot.safety.latched;
+
+    if (after & ~before) {
+        robot_failsafe();
+        LOG("[secu] DEFAUT %s%s : moteurs freines et verrouilles "
+            "(I=%ld mA V=%ld mV). Effacement : commande 's'.",
+            (after & ~before & FLAG_OVERCURRENT)  ? "SURINTENSITE " : "",
+            (after & ~before & FLAG_UNDERVOLTAGE) ? "SOUS-TENSION" : "",
+            (long)in.ibat_ma, (long)in.vbat_mv);
+    }
+
+    if (inhibit) {
+        if (!motors_inhibited()) motors_inhibit(true);
+    } else if (motors_inhibited()) {
+        /* Ne pas lever l'inhibition si ALERT vient juste de tomber entre la
+         * lecture du drapeau et maintenant : on tranche sous IRQ masquees. */
+        uint32_t irq = save_and_disable_interrupts();
+        if (!ina226_alert_fired()) motors_inhibit(false);
+        restore_interrupts(irq);
+    }
+
+    g_robot.vbat_mv = in.vbat_mv;
+    g_robot.ibat_ma = in.ibat_ma;
+    g_robot.flags   = safety_flags(&g_robot.safety, &in)
+                    | (g_robot.link_lost   ? FLAG_LINK_LOST  : 0u)
+                    | (!g_robot.imu_present ? FLAG_IMU_ABSENT : 0u)
+                    | (g_robot.test_mode != TEST_NORMAL ? FLAG_TEST_MODE : 0u);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -84,20 +167,21 @@ static void banner(void)
     LOG("--------------------------------------------------------");
     LOG(" horloge systeme    : %lu Hz",
         (unsigned long)clock_get_hz(clk_sys));
-    LOG(" moteur G  IN1/IN2  : GP%u / GP%u", PIN_MOT_L_IN1, PIN_MOT_L_IN2);
-    LOG(" moteur D  IN1/IN2  : GP%u / GP%u", PIN_MOT_R_IN1, PIN_MOT_R_IN2);
+    LOG(" moteur G  PWM/DIR  : GP%u / GP%u (MDD10A canal 1)",
+        PIN_MOT_L_PWM, PIN_MOT_L_DIR);
+    LOG(" moteur D  PWM/DIR  : GP%u / GP%u (MDD10A canal 2)",
+        PIN_MOT_R_PWM, PIN_MOT_R_DIR);
     LOG(" encodeur G  A/B    : GP%u / GP%u", PIN_ENC_L_A, PIN_ENC_L_B);
     LOG(" encodeur D  A/B    : GP%u / GP%u", PIN_ENC_R_A, PIN_ENC_R_B);
-    LOG(" I2C0 SDA/SCL       : GP%u / GP%u", PIN_I2C_SDA, PIN_I2C_SCL);
+    LOG(" I2C0 BNO055 SDA/SCL: GP%u / GP%u", PIN_I2C_SDA, PIN_I2C_SCL);
+    LOG(" I2C1 INA226 SDA/SCL: GP%u / GP%u, ALERT GP%u",
+        PIN_INA_SDA, PIN_INA_SCL, PIN_INA_ALERT);
     LOG(" UART0 logs TX/RX   : GP%u / GP%u @ %lu bauds",
         PIN_LOG_TX, PIN_LOG_RX, (unsigned long)LOG_UART_BAUD);
     LOG("--------------------------------------------------------");
     LOG(" PWM                : %lu Hz, %u pas",
         (unsigned long)PWM_FREQ_HZ, (unsigned)(motors_pwm_top() + 1u));
-    LOG(" decroissance       : %s  (MOTOR_DECAY_MODE)",
-        motors_decay_name());
-    LOG(" a duty nul         : %s",
-        MOTOR_IDLE_BRAKE ? "freinage" : "roue libre");
+    LOG(" a duty nul / arret : freinage (MDD10A, pas de roue libre)");
     LOG(" inversions moteur  : G=%d D=%d", MOT_L_INVERT, MOT_R_INVERT);
     LOG(" inversions encodeur: G=%d D=%d", ENC_L_INVERT, ENC_R_INVERT);
     LOG(" boucle de controle : %u Hz", CONTROL_HZ);
@@ -111,8 +195,14 @@ static void banner(void)
     LOG(" BNO055             : %s",
         g_robot.imu_present ? "present, mode IMU (magneto desactive)"
                             : "ABSENT — trame a zero sur g*/a*");
+    LOG(" INA226             : %s",
+        ina226_state()->present ? "present" : "ABSENT — pas de protection batterie");
+    LOG(" surintensite       : %d mA instantane (ALERT), %d mA pendant %lu ms",
+        OC_TRIP_MA, OC_SUSTAINED_MA, (unsigned long)OC_SUSTAINED_MS);
+    LOG(" sous-tension       : %d mV pendant %lu ms, reprise >= %d mV",
+        UV_TRIP_MV, (unsigned long)UV_DEBOUNCE_MS, UV_CLEAR_MV);
     LOG("--------------------------------------------------------");
-    LOG(" protocole robot sur USB CDC — aucun debug n'y transite");
+    LOG(" protocole v%d sur USB CDC — aucun debug n'y transite", PROTO_VERSION);
     LOG(" modes de test : t 0 normal | t 1 encodeurs | t 2 I2C");
     LOG("                 t 3 rampe moteurs | t 4 echelon PID");
     LOG("========================================================");
@@ -145,6 +235,10 @@ static void control_step(uint64_t now_us, float dt_s)
 {
     encoders_update(dt_s);
 
+    /* Securite avant toute commande moteur : un defaut detecte ici freine
+     * les moteurs pour cette periode deja. */
+    safety_step((uint32_t)(dt_s * 1000.0f + 0.5f));
+
     /* IMU : une seule transaction en rafale, bornee par I2C_TIMEOUT_US. */
     if (g_robot.imu_present) {
         bno055_read();
@@ -161,7 +255,15 @@ static void control_step(uint64_t now_us, float dt_s)
     /* Un mode de test actif prend la main sur les moteurs. */
     bool test_owns_motors = testmodes_step(dt_s);
 
-    if (!test_owns_motors) {
+    if (motors_inhibited()) {
+        /* Defaut actif : les consignes sont acceptees (elles rearment le
+         * chien de garde) mais rien n'est applique, et le PID ne doit pas
+         * accumuler d'erreur pendant ce temps. */
+        g_robot.out_duty[0] = 0;
+        g_robot.out_duty[1] = 0;
+        pid_reset(&g_robot.pid[0]);
+        pid_reset(&g_robot.pid[1]);
+    } else if (!test_owns_motors) {
         const encoders_t *e = encoders_state();
         switch (g_robot.ctrl_mode) {
         case CTRL_VELOCITY:
@@ -186,7 +288,7 @@ static void control_step(uint64_t now_us, float dt_s)
         default:
             g_robot.out_duty[0] = 0;
             g_robot.out_duty[1] = 0;
-            motors_coast_all();
+            motors_stop_all();
             break;
         }
     }
@@ -241,8 +343,12 @@ int main(void)
     g_robot.ol_duty[0]  = g_robot.ol_duty[1]  = 0;
     g_robot.out_duty[0] = g_robot.out_duty[1] = 0;
 
+    safety_init(&g_robot.safety);
+    g_robot.vbat_mv = g_robot.ibat_ma = 0;
+    g_robot.flags   = 0;
+
     motors_init();
-    motors_coast_all();
+    motors_stop_all();
 
     for (int i = 0; i < 2; i++) {
         pid_init(&g_robot.pid[i],
@@ -254,6 +360,7 @@ int main(void)
     protocol_init();
 
     g_robot.imu_present = bno055_init();
+    (void)ina226_init();
 
     banner();
     if (wd_reboot) {

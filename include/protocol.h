@@ -4,21 +4,26 @@
  * stdio EST le protocole. Aucun message de debug ne transite ici : les logs
  * sortent sur UART0 via LOG().
  *
- * Pi -> Pico, lignes ASCII terminees par \n :
+ * Protocole v2 (PROTO_VERSION). Specification complete pour l'hote :
+ * docs/PROTOCOLE.md.
+ *
+ * Hote -> Pico, lignes ASCII terminees par \n :
  *   v <l> <r>          consigne de vitesse, ticks/s, entiers signes
  *   o <l> <r>          boucle ouverte, rapport cyclique -1000..1000
- *   s                  arret immediat
+ *   s                  arret immediat, et acquittement des defauts
  *   r                  remise a zero des compteurs
  *   k <kp> <ki> <kd>   gains PID a chaud (flottants, appliques aux deux roues)
  *   t <n>              entree en mode de test n
+ *   i                  identification : reponse "I <nom> <version> <proto> <chk>"
  *
- * Pico -> Pi, spontanement a 50 Hz :
- *   S <t_ms> <enc_l> <enc_r> <vel_l> <vel_r> <gx> <gy> <gz> <ax> <ay> <az> <chk>
+ * Pico -> hote, spontanement a 50 Hz :
+ *   S <t_ms> <enc_l> <enc_r> <vel_l> <vel_r> <gx> <gy> <gz> <ax> <ay> <az>
+ *     <vbat_mv> <ibat_ma> <flags> <chk>
  *
- * CHECKSUM — definition exacte, a reproduire cote Pi :
- *   chk est le OU exclusif de TOUS les octets de la ligne depuis le 'S'
- *   inclus jusqu'au dernier caractere precedant l'espace qui separe <az> de
- *   <chk>. L'espace separateur, le champ chk lui-meme et le \n final sont
+ * CHECKSUM — definition exacte, a reproduire cote hote (trames S et I) :
+ *   chk est le OU exclusif de TOUS les octets de la ligne depuis la lettre initiale ('S' ou 'I')
+ *   inclus jusqu'au dernier caractere precedant l'espace qui separe le
+ *   dernier champ de <chk>. L'espace separateur, le champ chk lui-meme et le \n final sont
  *   exclus. Il est emis en deux chiffres hexadecimaux majuscules.
  *
  *   Python :

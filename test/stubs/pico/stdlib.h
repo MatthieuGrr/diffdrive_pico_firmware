@@ -15,7 +15,8 @@ static inline uint64_t time_us_64(void) { return h_now_us; }
 #define GPIO_OUT 1
 #define GPIO_FUNC_PWM 4
 static inline void gpio_init(unsigned p){(void)p;}
-static inline void gpio_put(unsigned p,int v){(void)p;(void)v;}
+extern int h_gpio[48];              /* niveaux poses par gpio_put */
+static inline void gpio_put(unsigned p,int v){ h_gpio[p]=v?1:0; }
 static inline void gpio_set_dir(unsigned p,int d){(void)p;(void)d;}
 static inline void gpio_set_function(unsigned p,int f){(void)p;(void)f;}
 static inline void gpio_pull_up(unsigned p){(void)p;}

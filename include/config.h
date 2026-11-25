@@ -9,7 +9,7 @@
  * Ce firmware ne connait NI rayon de roue, NI entraxe, NI counts par tour.
  * Il ne manipule que des ticks et des ticks/s. Aucune constante physique ne
  * doit apparaitre dans ce fichier ni ailleurs dans le firmware : la
- * cinematique et la calibration vivent cote Raspberry Pi 5.
+ * cinematique et la calibration vivent cote hote (Raspberry Pi 5 ou Jetson).
  */
 #ifndef DIFFDRIVE_PICO_CONFIG_H
 #define DIFFDRIVE_PICO_CONFIG_H
@@ -18,20 +18,23 @@
 /* Identite                                                                  */
 /* ------------------------------------------------------------------------ */
 #define FW_NAME                 "diffdrive_pico_firmware"
-#define FW_VERSION              "1.0.0"
+#define FW_VERSION              "2.0.0"
+/* Version du protocole serie. Incrementee a chaque changement incompatible
+ * des commandes ou de la trame S ; renvoyee par la commande 'i'.           */
+#define PROTO_VERSION           2
 
 /* ------------------------------------------------------------------------ */
 /* Brochage — RP2350, le GPIO n'est PAS tolerant 5V.                         */
 /* Les encodeurs doivent etre alimentes en 3.3V.                             */
 /* ------------------------------------------------------------------------ */
 
-/* Moteurs : DRV8871, deux entrees logiques par pont.                        */
-/* IN1/IN2 d'un meme moteur doivent partager la meme slice PWM :             */
-/* slice = (gpio >> 1) & 7, canal A = gpio pair, canal B = gpio impair.      */
-#define PIN_MOT_L_IN1           2u      /* slice 1, canal A */
-#define PIN_MOT_L_IN2           3u      /* slice 1, canal B */
-#define PIN_MOT_R_IN1           4u      /* slice 2, canal A */
-#define PIN_MOT_R_IN2           5u      /* slice 2, canal B */
+/* Moteurs : Cytron MDD10A, commande signe-amplitude (PWM + DIR) par canal.  */
+/* Canal 1 du MDD10A = moteur gauche, canal 2 = moteur droit.               */
+/* PWM sur une sortie de slice, DIR en simple GPIO.                          */
+#define PIN_MOT_L_PWM           2u      /* MDD10A PWM1, slice 1 canal A */
+#define PIN_MOT_L_DIR           3u      /* MDD10A DIR1                  */
+#define PIN_MOT_R_PWM           4u      /* MDD10A PWM2, slice 2 canal A */
+#define PIN_MOT_R_DIR           5u      /* MDD10A DIR2                  */
 
 /* Encodeurs en quadrature. Le canal B doit imperativement etre A + 1 :      */
 /* le programme PIO lit deux broches consecutives a partir de A.             */
@@ -40,13 +43,23 @@
 #define PIN_ENC_R_A             8u
 #define PIN_ENC_R_B             9u      /* informatif : doit valoir A + 1 */
 
-/* I2C0 — BNO055 */
+/* I2C0 — BNO055, seul sur son bus */
 #define IMU_I2C                 i2c0
 #define PIN_I2C_SDA             16u
 #define PIN_I2C_SCL             17u
 /* 100 kHz et pas 400 : les pull-ups en place sont trop faibles pour tenir
  * les fronts montants a 400 kHz, l'IMU decrochait. */
 #define IMU_I2C_BAUD            100000u
+
+/* I2C1 — INA226 (tension / courant batterie), seul sur son bus : un BNO055
+ * qui bloque le bus I2C0 ne peut pas rendre muet le capteur de securite.   */
+#define INA_I2C                 i2c1
+#define PIN_INA_SDA             18u
+#define PIN_INA_SCL             19u
+#define INA_I2C_BAUD            400000u
+/* Sortie ALERT de l'INA226 : drain ouvert, active a l'etat bas, tirage
+ * interne du Pico. Freine les moteurs sur interruption (surintensite).    */
+#define PIN_INA_ALERT           20u
 
 /* UART0 — logs de debug uniquement. JAMAIS le protocole robot.              */
 #define LOG_UART                uart0
@@ -62,60 +75,33 @@
 /* Moteurs                                                                   */
 /* ------------------------------------------------------------------------ */
 
-/* Frequence PWM. Au-dessus de l'audible, sous la limite du DRV8871 (100 kHz). */
-#define PWM_FREQ_HZ             25000u
+/* Frequence PWM. Au-dessus de l'audible, et limite haute du MDD10A (20 kHz). */
+#define PWM_FREQ_HZ             20000u
 
 /* Plage de rapport cyclique du protocole et de la sortie PID.               */
 #define DUTY_MAX                1000
 
 /*
- * MODE DE DECROISSANCE DU DRV8871 — la constante a changer.
+ * Table de verite du MDD10A (signe-amplitude), par canal :
+ *   PWM=0  DIR=x   sorties A=0 B=0   moteur court-circuite a la masse (FREIN)
+ *   PWM=1  DIR=0   A=1 B=0           marche dans un sens
+ *   PWM=1  DIR=1   A=0 B=1           marche dans l'autre
  *
- * Table de verite du DRV8871 :
- *   IN1=0 IN2=0  roue libre (coast)      — decroissance rapide
- *   IN1=1 IN2=0  marche avant
- *   IN1=0 IN2=1  marche arriere
- *   IN1=1 IN2=1  freinage (brake)        — decroissance lente
- *
- * DECAY_FAST : on module IN1 (ou IN2) et on maintient l'autre a 0. Pendant
- *   le temps mort le moteur est en roue libre. Zone morte importante a bas
- *   rapport cyclique, reponse fortement non lineaire.
- *
- * DECAY_SLOW : on maintient une entree a 1 et on module l'autre en
- *   complement. Pendant le temps mort le moteur est court-circuite : le
- *   courant est maintenu, la reponse couple/duty est bien plus lineaire a
- *   bas regime. C'est en general ce qu'il faut pour un asservissement de
- *   vitesse a faible rapport cyclique.
- *
- * Passer de l'un a l'autre = changer cette seule ligne.
+ * Consequences :
+ *   - le temps mort du PWM est TOUJOURS un freinage (decroissance lente) :
+ *     reponse couple/duty bien lineaire a bas regime ;
+ *   - le MDD10A n'a PAS d'etat roue libre : duty nul, commande 's' et
+ *     coupures de securite FREINENT le moteur. Robot a l'arret = roues
+ *     retenues ; il ne se pousse pas a la main moteurs sous tension.
  */
-#define DECAY_FAST              0
-#define DECAY_SLOW              1
-#ifndef MOTOR_DECAY_MODE        /* surchargeable par -D depuis CMake */
-#define MOTOR_DECAY_MODE        DECAY_SLOW
-#endif
 
 /*
- * Comportement a duty nul. Independant du mode de decroissance : a l'arret
- * on veut un etat previsible.
- *   0 = roue libre (IN1=0, IN2=0)  — le robot peut etre pousse a la main
- *   1 = freinage   (IN1=1, IN2=1)
- * La coupure de securite du chien de garde utilise TOUJOURS la roue libre,
- * quelle que soit cette valeur.
+ * Inversion du sens de rotation. A VERIFIER au banc avec t 3 apres le
+ * changement de moteurs : un duty positif doit faire AVANCER le robot.
+ * Inverser les fils blanc/jaune d'un moteur revient au meme.
  */
-#ifndef MOTOR_IDLE_BRAKE
-#define MOTOR_IDLE_BRAKE        0
-#endif
-
-/*
- * Inversion du sens de rotation. DETERMINE EXPERIMENTALEMENT :
- * avec (0, 1), un rapport cyclique positif faisait RECULER le robot, et les
- * encodeurs comptaient negativement — donc les encodeurs avaient deja le bon
- * signe (arriere = negatif) et c'etait la commande moteur qui etait a
- * l'envers. D'ou (1, 0).
- */
-#define MOT_L_INVERT            1
-#define MOT_R_INVERT            0
+#define MOT_L_INVERT            0
+#define MOT_R_INVERT            1   /* moteurs montes en miroir */
 
 /* ------------------------------------------------------------------------ */
 /* Encodeurs                                                                 */
@@ -132,14 +118,15 @@
 /* front a pleine vitesse. Augmenter pour filtrer davantage le bruit.        */
 #define ENC_PIO_CLKDIV          12.5f
 
-/* Resistances de tirage internes sur A et B. A laisser a 1 si les sorties   */
-/* de l'encodeur sont a collecteur ouvert, sans effet si elles sont push-pull.*/
+/* Resistances de tirage internes sur A et B. Les encodeurs SCX-555 sont a  */
+/* drain ouvert : a laisser a 1. Leurs tirages embarques sont relies a leur */
+/* VCC, d'ou l'alimentation des encodeurs en 3,3 V et jamais en 5 V.        */
 #define ENC_PULLUP              1
 
 /*
- * Inversion du signe des compteurs. VERIFIE EXPERIMENTALEMENT : ces valeurs
- * sont correctes, les deux encodeurs comptent bien positivement en marche
- * avant une fois MOT_x_INVERT corrige. Ne pas y toucher.
+ * Inversion du signe des compteurs. A VERIFIER avec t 1 puis t 3 apres le
+ * changement de moteurs : les deux compteurs doivent croitre en marche
+ * avant. Permuter les fils noir (A) et rouge (B) revient au meme.
  */
 #define ENC_L_INVERT            0
 #define ENC_R_INVERT            1   /* encodeurs montes en miroir */
@@ -170,41 +157,26 @@
 /*
  * Erreur en ticks/s, sortie en unites de rapport cyclique (+/- DUTY_MAX).
  *
- * MESURE au sol, robot a son poids final, alimentation etablie, par
- * tools/tune_pid.py.
- * Modele identifie :  roue G gain 3.800, tau 66 ms, zone morte duty 66
- *                     roue D gain 3.731, tau 58 ms, zone morte duty 77
- * Reponse obtenue :   depassement 6,1 %, etablissement 0,18 s, erreur
- *                     statique sous 0,9 %, ondulation 1,4 a 1,9 %.
- *
- * Recherche convergee par encadrement : x1.35 conforme, x1.52 trop nerveux,
- * intervalle referme. TROIS seances independantes concordent : gain de la
- * roue G a 0,2 % pres (3.806 / 3.798 / 3.800), kp a 2,6 % et kff a 0,8 %.
- * Le modele decrit donc reellement la machine, ce n'est pas un ajustement
- * de circonstance.
- *
- * L'alimentation est une batterie d'outillage 20 V, soit ~18 V nominaux
- * contre 24 V de specification moteur. Les 149 a 153 tr/min mesures pour
- * 170 annonces sont donc normaux, et meme meilleurs que les 75-83 %
- * attendus du rapport de tension.
+ * PROVISOIRES depuis le passage aux motoreducteurs 36-555 et au MDD10A.
+ * Les gains v1 (kp 0.1749, ki 0.8074, kff 0.266) avaient ete mesures sur
+ * les GA25-370 a 1496 counts/tour. Les 555 donnent environ deux fois plus
+ * de ticks/s a vitesse egale : gain de la machine environ double, donc
+ * gains v1 divises par deux comme point de depart prudent.
+ * A REMESURER au sol avec tools/tune_pid.py.
  */
-#define PID_KP_DEFAULT          0.1749f
-#define PID_KI_DEFAULT          0.8074f
+#define PID_KP_DEFAULT          0.087f
+#define PID_KI_DEFAULT          0.40f
 #define PID_KD_DEFAULT          0.0f
 
 /*
  * Terme d'anticipation : duty = KFF * consigne + PID.
  * Hors protocole (la commande 'k' ne regle que kp/ki/kd), donc constante de
  * compilation. 0.0 = desactive, le PID travaille seul.
- *
- * MESURE au banc, apres rodage des moteurs :
- *     roue gauche 3807 ticks/s a duty 1000  ->  1000/3807 = 0.263
- *     roue droite 3643 ticks/s a duty 1000  ->  1000/3643 = 0.274
- * Les deux roues ne different plus que de 5 % (22 % avant rodage), une
- * constante unique est donc legitime. Valeur retenue legerement sous la
- * moyenne : mieux vaut que l'integrateur ajoute que retranche.
+ * DESACTIVE tant que la pleine echelle des nouveaux moteurs n'est pas
+ * mesuree : relever les ticks/s a duty 1000 avec t 3, puis
+ * KFF = 1000 / ces ticks/s, legerement arrondi par defaut.
  */
-#define PID_KFF                 0.266f
+#define PID_KFF                 0.0f
 
 /* ------------------------------------------------------------------------ */
 /* Securite                                                                  */
@@ -229,6 +201,53 @@
 #define HW_WATCHDOG_MS          1000u
 
 /* ------------------------------------------------------------------------ */
+/* Surveillance de la batterie (INA226)                                      */
+/* ------------------------------------------------------------------------ */
+/*
+ * Shunt du module INA226 : resistance « R010 » = 10 mOhm. Plage de mesure
+ * +/- 81,92 mV / 10 mOhm = +/- 8,19 A, resolution 0,25 mA.
+ */
+#define INA226_ADDR             0x40    /* A0 = A1 = GND */
+#define INA226_SHUNT_UOHM       10000u  /* 10 mOhm */
+
+/*
+ * SURINTENSITE — deux niveaux, tous deux VERROUILLES (voir commande 's').
+ *
+ * 1. Seuil instantane, materiel : l'INA226 compare lui-meme chaque mesure
+ *    au seuil et tire ALERT a la masse ; le Pico freine les moteurs dans
+ *    l'interruption, sans attendre la boucle. Doit rester sous la pleine
+ *    echelle du shunt (8190 mA).
+ * 2. Seuil soutenu, logiciel : courant au-dessus de OC_SUSTAINED_MA pendant
+ *    OC_SUSTAINED_MS. Attrape un blocage de roue sans couper sur les pics
+ *    de demarrage.
+ *
+ * Valeurs de depart, A AJUSTER apres mesure du courant reel en roulage.
+ */
+#define OC_TRIP_MA              7500
+#define OC_SUSTAINED_MA         5000
+#define OC_SUSTAINED_MS         1000u
+
+/*
+ * SOUS-TENSION — protege la batterie d'outillage 20 V (5S Li-ion, 3,0 V
+ * par element en fin de decharge). Verrouillee apres UV_DEBOUNCE_MS sous le
+ * seuil : les creux de tension a l'acceleration ne declenchent rien.
+ * Ne se deverrouille (par 's') qu'au-dessus de UV_CLEAR_MV.
+ */
+#define UV_TRIP_MV              15000
+#define UV_CLEAR_MV             16000
+#define UV_DEBOUNCE_MS          2000u
+
+/* Sous cette tension, on considere la batterie debranchee (robot sur USB
+ * seul, au banc) : drapeau NO_BATTERY, non verrouille, pas de sous-tension. */
+#define VBAT_PRESENT_MV         5000
+
+/*
+ * INA226 absent : 0 = le robot roule quand meme (drapeau INA_ABSENT dans la
+ * trame, plus aucune protection de batterie) ; 1 = moteurs interdits.
+ */
+#define INA_REQUIRED            0
+
+/* ------------------------------------------------------------------------ */
 /* BNO055                                                                    */
 /* ------------------------------------------------------------------------ */
 
@@ -248,6 +267,8 @@
 /* Tentative de redetection quand l'IMU est absente, en periodes de controle.*/
 /* 250 * 20 ms = 5 s.                                                        */
 #define IMU_RETRY_TICKS         250u
+/* Idem pour l'INA226.                                                       */
+#define INA_RETRY_TICKS         250u
 
 /*
  * Unites du BNO055 (registre UNIT_SEL). On garde les valeurs par defaut du
@@ -272,13 +293,13 @@
  * Counts par tour de roue — PUREMENT INFORMATIF, aucun calcul ne l'utilise.
  * Ne sert qu'au message du mode t 1, pour vous donner la cible a comparer.
  * La frontiere d'abstraction tient : la conversion ticks -> distance vit
- * cote Pi, ce firmware ne fait qu'afficher ce nombre dans un log.
+ * cote hote, ce firmware ne fait qu'afficher ce nombre dans un log.
  *
- * Mesure sur 10 tours de roue a la main : 14960 ticks, soit
- *     1496 = 11 PPR x 4 (quadrature) x 34:1 (reduction)
- * Le reducteur est bien en 34:1 et non 35:1 comme annonce initialement.
+ * Encodeur SCX-555 : 16 PPR sur l'arbre moteur, soit 64 counts par tour
+ * moteur en x4, multiplies par le rapport du reducteur planetaire.
+ * A MESURER sur 10 tours de roue a la main avec t 1 (0 = inconnu).
  */
-#define TEST_COUNTS_PER_REV     1496
+#define TEST_COUNTS_PER_REV     0
 
 /* Cadence d'affichage des modes lents (t 1, t 2, t 3), en Hz.               */
 #define TEST_SLOW_LOG_HZ        5u
@@ -304,7 +325,7 @@
 /* Protocole                                                                 */
 /* ------------------------------------------------------------------------ */
 #define RX_LINE_MAX             96      /* longueur max d'une commande */
-#define TX_LINE_MAX             160     /* longueur max d'une trame S   */
+#define TX_LINE_MAX             192     /* longueur max d'une trame S   */
 /* Caracteres consommes au maximum par passage dans la boucle principale :   */
 /* borne le temps passe a parser si le Pi deverse un flot continu.           */
 #define RX_CHARS_PER_POLL       256
@@ -316,14 +337,11 @@ _Static_assert(PIN_ENC_L_B == PIN_ENC_L_A + 1u,
                "le canal B de l'encodeur gauche doit etre A + 1 (contrainte PIO)");
 _Static_assert(PIN_ENC_R_B == PIN_ENC_R_A + 1u,
                "le canal B de l'encodeur droit doit etre A + 1 (contrainte PIO)");
-_Static_assert((PIN_MOT_L_IN1 >> 1) == (PIN_MOT_L_IN2 >> 1),
-               "IN1/IN2 du moteur gauche doivent partager la meme slice PWM");
-_Static_assert((PIN_MOT_R_IN1 >> 1) == (PIN_MOT_R_IN2 >> 1),
-               "IN1/IN2 du moteur droit doivent partager la meme slice PWM");
-_Static_assert((PIN_MOT_L_IN1 & 1u) == 0u && (PIN_MOT_L_IN2 & 1u) == 1u,
-               "IN1 doit etre sur le canal A (gpio pair) et IN2 sur le canal B");
-_Static_assert((PIN_MOT_R_IN1 & 1u) == 0u && (PIN_MOT_R_IN2 & 1u) == 1u,
-               "IN1 doit etre sur le canal A (gpio pair) et IN2 sur le canal B");
+_Static_assert(PIN_MOT_L_PWM != PIN_MOT_R_PWM && PIN_MOT_L_DIR != PIN_MOT_R_DIR,
+               "broches moteur en double");
+_Static_assert(OC_TRIP_MA < 8190, "seuil de surintensite au-dela de la pleine echelle du shunt");
+_Static_assert(OC_SUSTAINED_MA < OC_TRIP_MA, "le seuil soutenu doit etre sous le seuil instantane");
+_Static_assert(UV_CLEAR_MV > UV_TRIP_MV, "hysteresis de sous-tension inversee");
 _Static_assert(ENC_L_SM != ENC_R_SM, "une machine a etat distincte par encodeur");
 
 #endif /* DIFFDRIVE_PICO_CONFIG_H */

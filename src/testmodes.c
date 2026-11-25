@@ -11,6 +11,7 @@
 #include "encoders.h"
 #include "motors.h"
 #include "bno055.h"
+#include "ina226.h"
 #include "pid.h"
 #include "log.h"
 
@@ -32,20 +33,25 @@ static void banner(int mode)
         break;
     case TEST_ENCODERS:
         LOG("=== t 1 : encodeurs seuls, moteurs coupes ===");
-        LOG("    tourner une roue d'un tour exact doit donner %d counts",
-            TEST_COUNTS_PER_REV);
+        if (TEST_COUNTS_PER_REV > 0) {
+            LOG("    tourner une roue d'un tour exact doit donner %d counts",
+                TEST_COUNTS_PER_REV);
+        } else {
+            LOG("    counts par tour encore inconnus : faire 10 tours de roue");
+            LOG("    a la main et diviser le compteur par 10");
+        }
         LOG("    et le signe doit s'inverser dans l'autre sens");
         LOG("    colonnes : enc_G enc_D | brut_G brut_D | v_G v_D (ticks/s)");
         break;
     case TEST_I2C:
-        LOG("=== t 2 : bus I2C0 et BNO055 ===");
+        LOG("=== t 2 : bus I2C0 (BNO055) et I2C1 (INA226) ===");
         break;
     case TEST_MOTOR_RAMP:
         LOG("=== t 3 : rampe en boucle ouverte, moteurs ALIMENTES ===");
         LOG("    surelever le robot, les roues doivent tourner librement");
         LOG("    si duty et vitesse sont de signes opposes sur une roue,");
         LOG("    inverser ENC_x_INVERT (ou MOT_x_INVERT) dans config.h");
-        LOG("    colonnes : t duty_G duty_D | v_G v_D (ticks/s)");
+        LOG("    colonnes : t duty_G duty_D | v_G v_D (ticks/s) | batterie");
         break;
     case TEST_PID_STEP:
         LOG("=== t 4 : echelon de consigne, PID ferme, moteurs ALIMENTES ===");
@@ -62,7 +68,7 @@ void testmodes_enter(int mode)
     if (mode < 0 || mode > TEST_MODE_MAX) return;
 
     /* Toute transition de mode part moteurs coupes. */
-    motors_coast_all();
+    motors_stop_all();
     g_robot.out_duty[0] = 0;
     g_robot.out_duty[1] = 0;
     pid_reset(&g_robot.pid[0]);
@@ -93,7 +99,7 @@ void testmodes_enter(int mode)
 
 static bool test_encoders(void)
 {
-    motors_coast_all();
+    motors_stop_all();
     g_robot.out_duty[0] = 0;
     g_robot.out_duty[1] = 0;
 
@@ -111,17 +117,18 @@ static bool test_encoders(void)
 /* t 2 — I2C et BNO055                                                       */
 /* ------------------------------------------------------------------------ */
 
-static void i2c_scan(void)
+static void i2c_scan(i2c_inst_t *bus, const char *name, uint sda, uint scl,
+                     uint32_t baud)
 {
-    LOG("t2 scan du bus I2C0 (SDA=GP%u SCL=GP%u, %lu Hz)",
-        PIN_I2C_SDA, PIN_I2C_SCL, (unsigned long)IMU_I2C_BAUD);
+    LOG("t2 scan du bus %s (SDA=GP%u SCL=GP%u, %lu Hz)",
+        name, sda, scl, (unsigned long)baud);
 
     int found = 0;
     for (uint8_t a = 0x08; a <= 0x77; a++) {
         uint8_t dummy;
         /* Une lecture d'un octet : un ACK d'adresse suffit a reveler la
          * presence d'un composant. */
-        int r = i2c_read_timeout_us(IMU_I2C, a, &dummy, 1, false,
+        int r = i2c_read_timeout_us(bus, a, &dummy, 1, false,
                                     I2C_TIMEOUT_US);
 #if HW_WATCHDOG_ENABLE
         /* Un bus bloque bas ferait durer le scan jusqu'a 112 * I2C_TIMEOUT_US.
@@ -174,6 +181,25 @@ static void bno055_report(void)
     }
 }
 
+static void ina226_report(void)
+{
+    uint16_t id = 0, die = 0, mask = 0, lim = 0;
+    if (!ina226_read_reg(INA226_REG_MANUF_ID, &id) ||
+        !ina226_read_reg(INA226_REG_DIE_ID, &die)) {
+        LOG("t2 INA226 muet sur I2C1 0x%02X", INA226_ADDR);
+        return;
+    }
+    LOG("t2 INA226 0x%02X  MANUF 0x%04X (%s)  DIE 0x%04X (%s)", INA226_ADDR,
+        id,  id  == INA226_MANUF_ID_VALUE ? "OK" : "INATTENDU",
+        die, die == INA226_DIE_ID_VALUE   ? "OK" : "INATTENDU");
+    if (ina226_read_reg(INA226_REG_ALERT_LIM, &lim) &&
+        ina226_read_reg(INA226_REG_MASK_EN, &mask)) {
+        LOG("t2 alerte : limite 0x%04X (%d mA), MASK_EN 0x%04X, broche %s",
+            lim, OC_TRIP_MA, mask,
+            ina226_alert_pin_active() ? "BASSE (alerte)" : "haute");
+    }
+}
+
 static void calib_report(void)
 {
     const bno055_t *m = bno055_state();
@@ -186,16 +212,26 @@ static void calib_report(void)
 
 static bool test_i2c(void)
 {
-    motors_coast_all();
+    motors_stop_all();
     g_robot.out_duty[0] = 0;
     g_robot.out_duty[1] = 0;
 
     if (s_ticks == 0u) {
-        i2c_scan();
+        i2c_scan(IMU_I2C, "I2C0", PIN_I2C_SDA, PIN_I2C_SCL, IMU_I2C_BAUD);
         bno055_report();
+        i2c_scan(INA_I2C, "I2C1", PIN_INA_SDA, PIN_INA_SCL, INA_I2C_BAUD);
+        ina226_report();
     }
 
     if ((s_ticks % SLOW_DIV) == 0u) {
+        const ina226_t *p = ina226_state();
+        if (p->present) {
+            LOG("t2 batterie %6ld mV  %+6ld mA  flags 0x%02lX",
+                (long)p->vbat_mv, (long)p->ibat_ma,
+                (unsigned long)g_robot.flags);
+        } else {
+            LOG("t2 INA226 absent : pas de mesure batterie");
+        }
         const bno055_t *m = bno055_state();
         if (!m->present) {
             LOG("t2 BNO055 absente : pas de dump");
@@ -271,9 +307,10 @@ static bool test_motor_ramp(float dt_s)
 
     if ((s_ticks % SLOW_DIV) == 0u) {
         const encoders_t *e = encoders_state();
-        LOG("t3 %6.2fs duty %+5d %+5d | v %+7ld %+7ld",
+        LOG("t3 %6.2fs duty %+5d %+5d | v %+7ld %+7ld | %ld mV %+ld mA",
             (double)s_t, g_robot.out_duty[0], g_robot.out_duty[1],
-            (long)e->vel_i[ENC_L], (long)e->vel_i[ENC_R]);
+            (long)e->vel_i[ENC_L], (long)e->vel_i[ENC_R],
+            (long)g_robot.vbat_mv, (long)g_robot.ibat_ma);
     }
     return true;
 }

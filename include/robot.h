@@ -14,6 +14,7 @@
 #include <stdint.h>
 
 #include "pid.h"
+#include "safety.h"
 
 typedef enum {
     CTRL_STOP = 0,      /* moteurs coupes                                  */
@@ -37,6 +38,12 @@ typedef struct {
     uint32_t    rx_bad;         /* commandes rejetees                      */
     uint32_t    overruns;       /* periodes de controle manquees           */
     bool        imu_present;
+
+    /* Batterie (INA226) et protections. */
+    int32_t     vbat_mv;        /* 0 si INA226 absent                      */
+    int32_t     ibat_ma;        /* positif = decharge, 0 si INA226 absent  */
+    safety_t    safety;
+    uint32_t    flags;          /* champ <flags> de la trame S (safety.h)  */
 } robot_t;
 
 extern robot_t g_robot;
@@ -44,5 +51,10 @@ extern robot_t g_robot;
 /* Applique la coupure de securite : PWM a zero, PID remis a zero, mode STOP.
  * Utilise par le chien de garde et par la commande 's'. */
 void robot_failsafe(void);
+
+/* Tente d'effacer les defauts verrouilles (surintensite, sous-tension).
+ * Appele par la commande 's'. N'efface que les defauts dont la cause a
+ * disparu ; les moteurs restent freines jusqu'a une nouvelle consigne. */
+void robot_clear_faults(void);
 
 #endif /* DIFFDRIVE_PICO_ROBOT_H */
