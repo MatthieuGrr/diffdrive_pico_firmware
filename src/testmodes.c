@@ -226,7 +226,7 @@ static bool test_i2c(void)
     if ((s_ticks % SLOW_DIV) == 0u) {
         const ina226_t *p = ina226_state();
         if (p->present) {
-            LOG("t2 batterie %6ld mV  %+6ld mA  flags 0x%02lX",
+            LOG("t2 batterie %6ld mV  %+6ld mA  flags 0x%03lX",
                 (long)p->vbat_mv, (long)p->ibat_ma,
                 (unsigned long)g_robot.flags);
         } else {

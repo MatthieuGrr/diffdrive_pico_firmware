@@ -143,7 +143,7 @@ S 123456 15230 15012 3012 2987 -3 12 1 -21 4 981 19234 1520 0 5F
 I <nom> <version_firmware> <version_protocole> <chk>
 ```
 
-Exemple : `I diffdrive_pico_firmware 2.0.0 2 0C`. Ce document décrit la
+Exemple : `I diffdrive_pico_firmware 2.1.0 2 0D`. Ce document décrit la
 **version de protocole 2**. Vérifiez-la au démarrage de votre pilote et
 refusez de piloter une version inconnue.
 
@@ -194,8 +194,10 @@ protocole avec `i`.
 | 5 | 32 | `INA_ABSENT` | capteur batterie muet, `vbat`/`ibat` à 0, **plus de protection batterie** | non |
 | 6 | 64 | `TEST_MODE` | mode de maintenance actif : envoyer `t 0` | non |
 | 7 | 128 | `MOTORS_INHIBITED` | un défaut interdit les moteurs : consignes ignorées | — |
+| 8 | 256 | `ESTOP` | arrêt d'urgence enfoncé (ou son câblage coupé), moteurs freinés | **oui** |
 
 `flags == 0` : tout va bien. Les bits non listés sont réservés et valent 0.
+Le champ dépasse 255 : le lire comme un entier 32 bits, pas comme un octet.
 
 ## 7. Sécurités et défauts
 
@@ -205,22 +207,29 @@ protocole avec `i`.
 | Surintensité instantanée | courant ≥ 7,5 A : coupure matérielle en quelques millisecondes |
 | Surintensité soutenue | courant > 5 A pendant 1 s (roue bloquée, robot coincé) |
 | Sous-tension | tension < 15,0 V pendant 2 s |
+| Arrêt d'urgence | bouton enfoncé pendant 40 ms (ou fil du contact coupé) |
 
-Lorsqu'un défaut **verrouillé** survient (`OVERCURRENT`, `UNDERVOLTAGE`) :
+Lorsqu'un défaut **verrouillé** survient (`OVERCURRENT`, `UNDERVOLTAGE`, `ESTOP`) :
 
 1. les moteurs sont freinés immédiatement ;
 2. le drapeau du défaut et `MOTORS_INHIBITED` sont levés ;
 3. les commandes `v` et `o` sont acceptées (elles entretiennent le chien de
    garde) mais **n'ont aucun effet** ;
 4. le défaut ne s'efface que par une commande **`s`**, et seulement si sa
-   cause a disparu : courant revenu sous 5 A, ou tension remontée au-dessus
-   de **16,0 V** (recharger ou changer la batterie). Sinon `s` est sans effet
+   cause a disparu : courant revenu sous 5 A, tension remontée au-dessus
+   de **16,0 V** (recharger ou changer la batterie), ou bouton d'arrêt
+   d'urgence relâché depuis au moins 200 ms. Sinon `s` est sans effet
    et le drapeau reste levé ;
 5. après l'effacement, le robot reste à l'arrêt jusqu'au prochain `v`/`o`.
 
 Conduite recommandée côté pilote : afficher le défaut à l'opérateur, ne
 **pas** envoyer `s` automatiquement en boucle (une roue bloquée se remettrait
 à forcer), et n'acquitter qu'après action humaine.
+
+L'arrêt d'urgence coupe **lui-même** la puissance des moteurs : le Pico ne
+fait que le surveiller par un contact auxiliaire, pour que l'hôte sache
+pourquoi le robot ne bouge plus. Relâcher le bouton ne suffit pas à repartir :
+il faut aussi un `s` de l'hôte, donc une décision du pilote.
 
 À l'arrêt (consigne nulle, `s`, chien de garde, défaut), les moteurs sont
 **freinés**, pas en roue libre : le robot ne se pousse pas facilement à la
@@ -272,7 +281,8 @@ Voir [`exemple_pilote.py`](exemple_pilote.py), qui fait exactement cela.
   renvoyée en continu (§4). Attention aux boucles qui n'envoient qu'en cas de
   changement de consigne.
 - **Rien ne bouge, `flags` contient 128** : un défaut est verrouillé, voir
-  §7. Avec 8 : la batterie est débranchée ou éteinte.
+  §7. Avec 8 : la batterie est débranchée ou éteinte. Avec 256 : arrêt
+  d'urgence enfoncé, ou contact de l'AU non câblé (GP21 en l'air).
 - **Checksums faux en série** : port ouvert en mode « cooked » (traduction de
   fin de ligne, écho). Ouvrir en mode brut.
 - **Les compteurs semblent sauter** : ils sont cumulés (§5.1) ; ne pas les

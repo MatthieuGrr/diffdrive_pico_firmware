@@ -13,6 +13,16 @@ void safety_init(safety_t *s)
 
 bool safety_update(safety_t *s, const safety_in_t *in, uint32_t dt_ms)
 {
+    /* Arret d'urgence : independant de l'INA226. */
+    if (ESTOP_ENABLE && in->estop_active) {
+        s->estop_on_ms += dt_ms;
+        s->estop_off_ms = 0;
+        if (s->estop_on_ms >= ESTOP_TRIP_MS) s->latched |= FLAG_ESTOP;
+    } else {
+        s->estop_off_ms += dt_ms;
+        s->estop_on_ms = 0;
+    }
+
     if (in->ina_present) {
         int32_t i = iabs(in->ibat_ma);
 
@@ -53,6 +63,12 @@ bool safety_update(safety_t *s, const safety_in_t *in, uint32_t dt_ms)
 
 uint32_t safety_try_clear(safety_t *s, const safety_in_t *in)
 {
+    if (s->latched & FLAG_ESTOP) {
+        /* Bouton relache ET stable depuis ESTOP_RELEASE_MS. */
+        bool released = !(ESTOP_ENABLE && in->estop_active) &&
+                        s->estop_off_ms >= ESTOP_RELEASE_MS;
+        if (released) s->latched &= ~FLAG_ESTOP;
+    }
     if (s->latched & FLAG_OVERCURRENT) {
         bool cause_gone = !in->alert_pin_active &&
                           (!in->ina_present || iabs(in->ibat_ma) < OC_SUSTAINED_MA);

@@ -24,6 +24,7 @@ documenté dans docs/PROTOCOLE.md.
 | Encodeur D | A=GP8, B=GP9 |
 | I2C0 (BNO055) | SDA=GP16, SCL=GP17 |
 | I2C1 (INA226) | SDA=GP18, SCL=GP19, ALERT=GP20 |
+| Arrêt d'urgence | GP21, contact auxiliaire NF vers GND (1 = AU) |
 
 Tout en 3.3V. Le GPIO du RP2350 n'est pas tolérant 5V. Schéma : docs/cablage.png.
 
@@ -36,7 +37,7 @@ Tout en 3.3V. Le GPIO du RP2350 n'est pas tolérant 5V. Schéma : docs/cablage.p
 - Le firmware ignore rayon de roue, entraxe et counts/tour. Il ne connaît que
   des ticks. La cinématique vit côté hôte.
 - Watchdog 300 ms : perte du lien série => moteurs freinés.
-- Défauts batterie (surintensité, sous-tension) verrouillés, effacés
+- Défauts verrouillés (surintensité, sous-tension, arrêt d'urgence), effacés
   seulement par 's' quand la cause a disparu.
 - Compteurs d'encodeurs cumulés dans les trames, jamais des deltas.
 - Protocole : toute modification de la trame ou des commandes met à jour

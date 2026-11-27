@@ -1,5 +1,6 @@
 /*
- * diffdrive_pico_firmware — protections batterie et drapeaux d'etat.
+ * diffdrive_pico_firmware — protections batterie, arret d'urgence et
+ * drapeaux d'etat.
  *
  * Logique pure, sans acces materiel : compilee telle quelle sur l'hote par
  * test/test_safety.c. Le pilote INA226 fournit les mesures, main.c applique
@@ -25,6 +26,7 @@
 #define FLAG_INA_ABSENT         0x20u   /* INA226 absent, v/i a zero       */
 #define FLAG_TEST_MODE          0x40u   /* mode de test actif (t 1..4)     */
 #define FLAG_MOTORS_INHIBITED   0x80u   /* moteurs interdits par un defaut */
+#define FLAG_ESTOP              0x100u  /* arret d'urgence, verrouille     */
 
 typedef struct {
     bool    ina_present;
@@ -32,12 +34,16 @@ typedef struct {
     int32_t ibat_ma;
     bool    alert_fired;        /* interruption ALERT survenue          */
     bool    alert_pin_active;   /* broche ALERT encore basse            */
+    bool    estop_active;       /* entree AU a l'etat actif (brut)      */
 } safety_in_t;
 
 typedef struct {
-    uint32_t latched;           /* FLAG_OVERCURRENT | FLAG_UNDERVOLTAGE */
+    uint32_t latched;           /* FLAG_OVERCURRENT | FLAG_UNDERVOLTAGE
+                                   | FLAG_ESTOP                          */
     uint32_t oc_ms;             /* duree passee au-dessus du seuil soutenu */
     uint32_t uv_ms;             /* duree passee sous le seuil de tension   */
+    uint32_t estop_on_ms;       /* duree continue AU actif                 */
+    uint32_t estop_off_ms;      /* duree continue AU au repos              */
     bool     no_battery;
     bool     inhibit;           /* decision : moteurs interdits         */
 } safety_t;
@@ -51,7 +57,7 @@ bool safety_update(safety_t *s, const safety_in_t *in, uint32_t dt_ms);
  * a disparu. Renvoie les defauts encore verrouilles. */
 uint32_t safety_try_clear(safety_t *s, const safety_in_t *in);
 
-/* Drapeaux FLAG_OVERCURRENT, FLAG_UNDERVOLTAGE, FLAG_NO_BATTERY,
+/* Drapeaux FLAG_OVERCURRENT, FLAG_UNDERVOLTAGE, FLAG_ESTOP, FLAG_NO_BATTERY,
  * FLAG_INA_ABSENT et FLAG_MOTORS_INHIBITED. Les autres bits sont poses
  * par main.c. */
 uint32_t safety_flags(const safety_t *s, const safety_in_t *in);

@@ -76,6 +76,20 @@ void robot_failsafe(void)
     pid_reset(&g_robot.pid[1]);
 }
 
+/* Entree arret d'urgence (contact auxiliaire NF, voir PIN_ESTOP). */
+static void estop_init(void)
+{
+    gpio_init(PIN_ESTOP);
+    gpio_set_dir(PIN_ESTOP, GPIO_IN);
+    if (ESTOP_ACTIVE_HIGH) gpio_pull_up(PIN_ESTOP);
+    else                   gpio_pull_down(PIN_ESTOP);
+}
+
+static bool estop_pin_active(void)
+{
+    return gpio_get(PIN_ESTOP) == (ESTOP_ACTIVE_HIGH ? 1 : 0);
+}
+
 static void safety_inputs(safety_in_t *in)
 {
     const ina226_t *p = ina226_state();
@@ -84,6 +98,7 @@ static void safety_inputs(safety_in_t *in)
     in->ibat_ma          = p->ibat_ma;
     in->alert_fired      = ina226_alert_fired();
     in->alert_pin_active = ina226_alert_pin_active();
+    in->estop_active     = estop_pin_active();
 }
 
 void robot_clear_faults(void)
@@ -131,8 +146,9 @@ static void safety_step(uint32_t dt_ms)
 
     if (after & ~before) {
         robot_failsafe();
-        LOG("[secu] DEFAUT %s%s : moteurs freines et verrouilles "
+        LOG("[secu] DEFAUT %s%s%s : moteurs freines et verrouilles "
             "(I=%ld mA V=%ld mV). Effacement : commande 's'.",
+            (after & ~before & FLAG_ESTOP)        ? "ARRET D'URGENCE " : "",
             (after & ~before & FLAG_OVERCURRENT)  ? "SURINTENSITE " : "",
             (after & ~before & FLAG_UNDERVOLTAGE) ? "SOUS-TENSION" : "",
             (long)in.ibat_ma, (long)in.vbat_mv);
@@ -176,6 +192,9 @@ static void banner(void)
     LOG(" I2C0 BNO055 SDA/SCL: GP%u / GP%u", PIN_I2C_SDA, PIN_I2C_SCL);
     LOG(" I2C1 INA226 SDA/SCL: GP%u / GP%u, ALERT GP%u",
         PIN_INA_SDA, PIN_INA_SCL, PIN_INA_ALERT);
+    LOG(" arret d'urgence    : GP%u, %s, actuellement %s", PIN_ESTOP,
+        ESTOP_ENABLE ? "surveille" : "IGNORE (ESTOP_ENABLE 0)",
+        estop_pin_active() ? "ENFONCE ou non cable" : "relache");
     LOG(" UART0 logs TX/RX   : GP%u / GP%u @ %lu bauds",
         PIN_LOG_TX, PIN_LOG_RX, (unsigned long)LOG_UART_BAUD);
     LOG("--------------------------------------------------------");
@@ -361,6 +380,7 @@ int main(void)
 
     g_robot.imu_present = bno055_init();
     (void)ina226_init();
+    estop_init();
 
     banner();
     if (wd_reboot) {

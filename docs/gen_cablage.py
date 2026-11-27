@@ -60,7 +60,7 @@ text(W / 2, 66, "Vue de dessus, USB en haut. Tous les signaux sont en 3,3 V. "
      "Rails communs : 3V3 = broche 36, GND = broche 38.", 14, "middle", fill="#444")
 
 usedL = {"GP0", "GP1", "GP2", "GP3", "GP4", "GP5", "GP6", "GP7", "GP8", "GP9"}
-usedR = {"GP16", "GP17", "GP18", "GP19", "GP20", "3V3(OUT)"}
+usedR = {"GP16", "GP17", "GP18", "GP19", "GP20", "GP21", "3V3(OUT)"}
 gndL = {2, 7, 12}             # index des GND cables a gauche
 gndR = {2, 17, 12}            # broche 38, 23, 28
 
@@ -124,7 +124,7 @@ def right_block(i0, i1, title, sub, pins, vcc=True, extra_h=0):
         wire(BX1 + 7, y, RX, y, C[kind], name, (RX + BX1) / 2)
         text(RX + 10, y + 5, label, 13)
     if vcc:
-        tag(RX + 110, y1 - 22, "VCC ← 3V3", C["pwr"])
+        tag(RX + 110, y1 - 22, vcc if isinstance(vcc, str) else "VCC ← 3V3", C["pwr"])
 
 # Rails d'alimentation
 y36, y38, y40 = y_of(4), y_of(2), y_of(0)
@@ -135,11 +135,14 @@ wire(BX1 + 7, y36, RX, y36, C["pwr"], "3V3(OUT), 300 mA max", (RX + BX1) / 2)
 text(RX + 10, y38 + 5, "rail GND", 13)
 text(RX + 10, y36 + 5, "rail 3V3", 13, fill=C["pwr"], weight="bold")
 
-right_block(12, 16, "INA226 (0x40)", "I2C1, 400 kHz|bus à lui seul|shunt 10 mΩ", [
-    (12, ("GND", "gnd", "GND")),
+right_block(12, 13, "Arrêt d'urgence", "contact auxiliaire NF", [
+    (12, ("borne 1", "gnd", "GND")),
+    (13, ("borne 2", "sig", "GP21 · AU (1 = enfoncé)"))], vcc=False)
+tag(W - 50, y_of(13) - 1, "4,7 kΩ → 3V3", C["pwr"], "end")
+right_block(14, 16, "INA226 (0x40)", "I2C1, 400 kHz|bus à lui seul|shunt 10 mΩ", [
     (14, ("ALERT", "sig", "GP20 · ALERT (IRQ)")),
     (15, ("SCL", "i2c", "GP19 · I2C1 SCL")),
-    (16, ("SDA", "i2c", "GP18 · I2C1 SDA"))])
+    (16, ("SDA", "i2c", "GP18 · I2C1 SDA"))], vcc="VCC ← 3V3, GND ← rail")
 right_block(17, 19, "BNO055 (0x28)", "I2C0, 100 kHz", [
     (17, ("GND", "gnd", "GND")),
     (18, ("SCL", "i2c", "GP17 · I2C0 SCL")),
@@ -150,19 +153,23 @@ py = TOP + 20 * PITCH + 40
 add(f'<line x1="40" y1="{py}" x2="{W-40}" y2="{py}" stroke="#ccc" stroke-dasharray="6 6"/>')
 text(40, py + 30, "Puissance (fils de section adaptée, 10 A max par canal)", 17, weight="bold")
 ry = py + 100
-nodes = [(60, "Batterie 20 V", "outillage, ~18 V"), (280, "Fusible", "~10 A"),
-         (480, "INA226", "IN+ → shunt 10 mΩ → IN−"), (760, "MDD10A", "B+ / B−")]
-for x, t, s in nodes:
-    add(f'<rect x="{x}" y="{ry-30}" width="{ {280: 160, 480: 230}.get(x, 200) }" height="60" rx="8" '
+nodes = [(60, 180, "Batterie 20 V", "outillage, ~18 V"), (265, 120, "Fusible", "~10 A"),
+         (410, 225, "INA226", "IN+ → shunt 10 mΩ → IN−"),
+         (660, 165, "Arrêt d'urgence", "contact NF puissance"),
+         (850, 120, "MDD10A", "B+ / B−")]
+for x, w, t, s in nodes:
+    add(f'<rect x="{x}" y="{ry-30}" width="{w}" height="60" rx="8" '
         f'fill="{C["box"]}" stroke="{C["edge"]}"/>')
     text(x + 12, ry - 6, t, 14, weight="bold")
     text(x + 12, ry + 14, s, 11, fill="#555")
-for x1, x2 in [(260, 280), (440, 480), (710, 760)]:
-    add(f'<path d="M{x1},{ry} H{x2}" stroke="{C["pwr"]}" stroke-width="4" fill="none"/>')
-add(f'<path d="M160,{ry+30} V{ry+70} H860 V{ry+30}" stroke="{C["gnd"]}" stroke-width="4" fill="none"/>')
-text(510, ry + 64, "Batterie − → MDD10A B− (masse commune avec le GND du Pico)", 12, "middle")
-add(f'<path d="M960,{ry-12} H1040" stroke="#555" stroke-width="3" fill="none"/>')
-add(f'<path d="M960,{ry+12} H1040" stroke="#555" stroke-width="3" fill="none"/>')
+for (x1, w1, *_), (x2, *_) in zip(nodes, nodes[1:]):
+    add(f'<path d="M{x1 + w1},{ry} H{x2}" stroke="{C["pwr"]}" stroke-width="4" fill="none"/>')
+add(f'<path d="M150,{ry+30} V{ry+70} H910 V{ry+30}" stroke="{C["gnd"]}" stroke-width="4" fill="none"/>')
+text(530, ry + 64, "Batterie − → MDD10A B− (masse commune avec le GND du Pico)", 12, "middle")
+text(742, ry - 42, "après l'INA226 : la batterie reste mesurée bouton enfoncé", 11, "middle", fill="#555")
+text(742, ry + 92, "2ᵉ contact NF du même bouton → GP21 (ci-dessus)", 11, "middle", fill=C["sig"])
+add(f'<path d="M970,{ry-12} H1040" stroke="#555" stroke-width="3" fill="none"/>')
+add(f'<path d="M970,{ry+12} H1040" stroke="#555" stroke-width="3" fill="none"/>')
 for k, (lab, mot) in enumerate([("M1A / M1B", "moteur G, fils blanc / jaune"), ("M2A / M2B", "moteur D, fils blanc / jaune")]):
     yy = ry - 34 + k * 48
     add(f'<rect x="1040" y="{yy}" width="380" height="40" rx="8" fill="{C["box"]}" stroke="{C["edge"]}"/>')
@@ -178,8 +185,8 @@ for k, (lab, col) in enumerate([("signal 3,3 V", C["sig"]), ("I2C", C["i2c"]),
     text(x + 50, ly + 5, lab, 13)
 add(f'<circle cx="1230" cy="{ly}" r="7" fill="#2e7d32" stroke="#333"/>')
 text(1244, ly + 5, "broche utilisée", 13)
-text(W / 2, H - 22, "Libres : GP10–GP15, GP21, GP22, GP26–GP28 (ADC). "
-     "Encodeurs alimentés en 3,3 V : leurs résistances de tirage embarquées restent sûres pour le RP2350. ALERT : drain ouvert, tirage interne du Pico.",
+text(W / 2, H - 22, "Libres : GP10–GP15, GP22, GP26–GP28 (ADC). "
+     "Encodeurs alimentés en 3,3 V : leurs résistances de tirage embarquées restent sûres pour le RP2350. ALERT : drain ouvert, tirage interne. AU : + 100 nF GP21–GND conseillé.",
      12, "middle", fill="#555")
 add("</svg>")
 

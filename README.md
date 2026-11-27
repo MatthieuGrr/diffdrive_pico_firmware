@@ -67,6 +67,7 @@ Schéma complet : [`docs/cablage.png`](docs/cablage.png) (source
 | Encodeur D | A = GP8 (11), B = GP9 (12), GND (13) |
 | I2C0 (BNO055) | SDA = GP16 (21), SCL = GP17 (22), GND (23) |
 | I2C1 (INA226) | SDA = GP18 (24), SCL = GP19 (25), ALERT = GP20 (26), GND (28) |
+| Arrêt d'urgence | contact NF entre GP21 (27) et GND (28), tirage 4,7 kΩ vers 3V3 |
 | Rails | 3V3(OUT) (36), GND (38) |
 
 Canal 1 du MDD10A = moteur gauche, canal 2 = moteur droit.
@@ -83,6 +84,17 @@ Attention, le rouge et le noir sont des *signaux*, pas l'alimentation.
 L'INA226 a son propre bus I2C : un BNO055 qui bloque le bus I2C0 ne peut pas
 rendre muet le capteur de sécurité. Sa sortie ALERT freine les moteurs sur
 interruption, sans attendre la boucle de contrôle.
+
+L'arrêt d'urgence coupe la puissance des moteurs par lui-même, en
+matériel. Le Pico ne fait que le **surveiller** par un contact auxiliaire
+**normalement fermé** du bouton, entre GP21 et GND : bouton relâché, GP21
+est à 0 ; bouton enfoncé ou fil coupé, GP21 remonte à 1 et le drapeau `ESTOP`
+(256) se lève. Une rupture de câblage arrête donc le robot au lieu de passer
+inaperçue. Prévoir une résistance de tirage de 4,7 kΩ vers 3V3 (le tirage
+interne de ~50 kΩ est trop faible pour un fil qui longe les câbles moteur)
+et, si possible, 100 nF entre GP21 et GND. Sans bouton câblé, le robot reste
+en `ESTOP` : c'est voulu. Pour un banc sans bouton, relier GP21 à GND ou
+mettre `ESTOP_ENABLE` à 0 dans `config.h`.
 
 Une contrainte est vérifiée à la compilation par un `_Static_assert` dans
 [`config.h`](include/config.h) : le canal B d'un encodeur doit être `A + 1` (le
@@ -175,13 +187,14 @@ def verifier(ligne: str) -> bool:
     return functools.reduce(operator.xor, charge.encode(), 0) == int(chk, 16)
 ```
 
-### Protections batterie
+### Protections batterie et arrêt d'urgence
 
 | Défaut | Déclenchement | Effacement |
 |---|---|---|
 | Surintensité instantanée | une mesure de l'INA226 ≥ `OC_TRIP_MA` (7,5 A) : ALERT, freinage sous interruption | `s`, une fois ALERT relâchée |
 | Surintensité soutenue | ≥ `OC_SUSTAINED_MA` (5 A) pendant `OC_SUSTAINED_MS` (1 s) | `s`, courant revenu sous 5 A |
 | Sous-tension | < `UV_TRIP_MV` (15 V) pendant `UV_DEBOUNCE_MS` (2 s) | `s`, tension ≥ `UV_CLEAR_MV` (16 V) |
+| Arrêt d'urgence | GP21 à 1 pendant `ESTOP_TRIP_MS` (40 ms) | `s`, bouton relâché depuis `ESTOP_RELEASE_MS` (200 ms) |
 
 Les défauts sont **verrouillés** : moteurs freinés, consignes `v`/`o` acceptées
 mais sans effet, jusqu'à un `s` explicite *et* la disparition de la cause.

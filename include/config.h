@@ -18,7 +18,7 @@
 /* Identite                                                                  */
 /* ------------------------------------------------------------------------ */
 #define FW_NAME                 "diffdrive_pico_firmware"
-#define FW_VERSION              "2.0.0"
+#define FW_VERSION              "2.1.0"
 /* Version du protocole serie. Incrementee a chaque changement incompatible
  * des commandes ou de la trame S ; renvoyee par la commande 'i'.           */
 #define PROTO_VERSION           2
@@ -60,6 +60,17 @@
 /* Sortie ALERT de l'INA226 : drain ouvert, active a l'etat bas, tirage
  * interne du Pico. Freine les moteurs sur interruption (surintensite).    */
 #define PIN_INA_ALERT           20u
+
+/* Surveillance de l'arret d'urgence (AU). Le bouton coupe lui-meme la
+ * puissance moteur ; le Pico ne fait que LIRE un contact auxiliaire NF
+ * (normalement ferme) du bouton, cable entre GP21 et GND (broche 28,
+ * voisine). Tirage au 3V3 : resistance externe 4,7 kOhm conseillee, le
+ * tirage interne (~50 kOhm) reste actif en secours.
+ *   bouton relache : contact ferme  -> GP21 a 0 -> normal
+ *   bouton enfonce : contact ouvert -> GP21 a 1 -> FLAG_ESTOP
+ *   fil coupe ou debranche          -> GP21 a 1 -> FLAG_ESTOP (securite
+ *   positive : une panne de cablage arrete le robot, elle ne le cache pas) */
+#define PIN_ESTOP               21u
 
 /* UART0 — logs de debug uniquement. JAMAIS le protocole robot.              */
 #define LOG_UART                uart0
@@ -247,6 +258,19 @@
  */
 #define INA_REQUIRED            0
 
+/*
+ * ARRET D'URGENCE — voir PIN_ESTOP. Defaut VERROUILLE : il faut relacher le
+ * bouton PUIS envoyer 's' pour pouvoir rouler a nouveau.
+ * ESTOP_ENABLE 0 ignore l'entree (drapeau jamais pose), pour un banc sans
+ * bouton. A 1 sans rien de cable, GP21 flotte a 1 : AU permanent, voulu.
+ * Antirebond : AU retenu apres ESTOP_TRIP_MS a l'etat actif, bouton
+ * considere relache apres ESTOP_RELEASE_MS a l'etat repos.
+ */
+#define ESTOP_ENABLE            1
+#define ESTOP_ACTIVE_HIGH       1       /* 1 = contact NF vers GND (cf. ci-dessus) */
+#define ESTOP_TRIP_MS           40u
+#define ESTOP_RELEASE_MS        200u
+
 /* ------------------------------------------------------------------------ */
 /* BNO055                                                                    */
 /* ------------------------------------------------------------------------ */
@@ -342,6 +366,7 @@ _Static_assert(PIN_MOT_L_PWM != PIN_MOT_R_PWM && PIN_MOT_L_DIR != PIN_MOT_R_DIR,
 _Static_assert(OC_TRIP_MA < 8190, "seuil de surintensite au-dela de la pleine echelle du shunt");
 _Static_assert(OC_SUSTAINED_MA < OC_TRIP_MA, "le seuil soutenu doit etre sous le seuil instantane");
 _Static_assert(UV_CLEAR_MV > UV_TRIP_MV, "hysteresis de sous-tension inversee");
+_Static_assert(PIN_ESTOP != PIN_INA_ALERT, "AU et ALERT sur la meme broche");
 _Static_assert(ENC_L_SM != ENC_R_SM, "une machine a etat distincte par encodeur");
 
 #endif /* DIFFDRIVE_PICO_CONFIG_H */

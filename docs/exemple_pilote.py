@@ -22,7 +22,7 @@ PERIODE_CONSIGNE = 0.05     # 20 Hz : bien sous le chien de garde de 300 ms
 FLAGS = {
     0x01: "LINK_LOST", 0x02: "OVERCURRENT", 0x04: "UNDERVOLTAGE",
     0x08: "NO_BATTERY", 0x10: "IMU_ABSENT", 0x20: "INA_ABSENT",
-    0x40: "TEST_MODE", 0x80: "MOTORS_INHIBITED",
+    0x40: "TEST_MODE", 0x80: "MOTORS_INHIBITED", 0x100: "ESTOP",
 }
 CHAMPS_S = ("t_ms", "enc_l", "enc_r", "vel_l", "vel_r",
             "gx", "gy", "gz", "ax", "ay", "az",

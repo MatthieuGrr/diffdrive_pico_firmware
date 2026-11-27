@@ -101,6 +101,38 @@ int main(void)
     ck("drapeau INA_ABSENT pose", safety_flags(&s,&in) & FLAG_INA_ABSENT);
     ck("pas de faux NO_BATTERY sans capteur", !(safety_flags(&s,&in) & FLAG_NO_BATTERY));
 
+    puts("\nArret d'urgence :");
+    safety_init(&s); in=nominal(); in.estop_active=true;
+    int n_au=(int)(ESTOP_TRIP_MS/20u);
+    ck("parasite d'une periode : ignore", !run(&s,&in,n_au-1) && !(s.latched & FLAG_ESTOP));
+    ck(ESTOP_ENABLE ? "AU maintenu ESTOP_TRIP_MS : verrouille, moteurs interdits"
+                    : "ESTOP_ENABLE=0 : entree ignoree",
+       ESTOP_ENABLE ? (run(&s,&in,1) && (s.latched & FLAG_ESTOP))
+                    : (!run(&s,&in,1) && s.latched==0u));
+    if (ESTOP_ENABLE) {
+        ck("drapeau ESTOP (0x100) et MOTORS_INHIBITED poses",
+           (safety_flags(&s,&in) & (FLAG_ESTOP|FLAG_MOTORS_INHIBITED))==(FLAG_ESTOP|FLAG_MOTORS_INHIBITED));
+        safety_try_clear(&s,&in);
+        ck("'s' refuse tant que le bouton est enfonce", s.latched & FLAG_ESTOP);
+        in.estop_active=false; run(&s,&in,1);
+        ck("bouton relache, sans 's' : reste verrouille", run(&s,&in,50) && (s.latched & FLAG_ESTOP));
+        safety_init(&s); in=nominal(); in.estop_active=true; run(&s,&in,n_au);
+        in.estop_active=false; run(&s,&in,(int)(ESTOP_RELEASE_MS/20u)-1);
+        safety_try_clear(&s,&in);
+        ck("'s' refuse si le bouton vient juste d'etre relache (rebond)", s.latched & FLAG_ESTOP);
+        run(&s,&in,1);
+        ck("'s' efface une fois le bouton relache depuis ESTOP_RELEASE_MS",
+           safety_try_clear(&s,&in)==0u && !s.inhibit);
+        safety_init(&s); in=nominal(); in.ina_present=false; in.vbat_mv=0; in.ibat_ma=0;
+        in.estop_active=true;
+        ck("AU surveille meme sans INA226", run(&s,&in,n_au) && (s.latched & FLAG_ESTOP));
+        safety_init(&s); in=nominal(); in.estop_active=true; in.alert_fired=true;
+        run(&s,&in,n_au); in.estop_active=false; in.alert_fired=false; in.alert_pin_active=true;
+        run(&s,&in,(int)(ESTOP_RELEASE_MS/20u));
+        ck("AU + surintensite : 's' n'efface que l'AU tant qu'ALERT est basse",
+           safety_try_clear(&s,&in)==FLAG_OVERCURRENT && s.inhibit);
+    }
+
     puts("\nDrapeau MOTORS_INHIBITED :");
     safety_init(&s); in=nominal(); in.alert_fired=true; run(&s,&in,1);
     ck("pose des qu'un defaut est verrouille", safety_flags(&s,&in) & FLAG_MOTORS_INHIBITED);

@@ -81,7 +81,7 @@ class FauxPico:
                 ok=True
             elif c=="t" and len(p)==2: ok=True
             elif c=="i" and len(p)==1:
-                ch = "I diffdrive_pico_firmware 2.0.0 2"
+                ch = "I diffdrive_pico_firmware 2.1.0 2"
                 ck = functools.reduce(operator.xor, ch.encode(), 0)
                 self.sortie += f"{ch} {ck:02X}\n".encode(); ok=True
         except ValueError: ok=False
