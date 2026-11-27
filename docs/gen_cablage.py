@@ -138,7 +138,7 @@ text(RX + 10, y36 + 5, "rail 3V3", 13, fill=C["pwr"], weight="bold")
 right_block(12, 13, "Arrêt d'urgence", "contact auxiliaire NF", [
     (12, ("borne 1", "gnd", "GND")),
     (13, ("borne 2", "sig", "GP21 · AU (1 = enfoncé)"))], vcc=False)
-tag(W - 50, y_of(13) - 1, "4,7 kΩ → 3V3", C["pwr"], "end")
+tag(W - 50, y_of(13) - 1, "tirage interne", C["sig"], "end")
 right_block(14, 16, "INA226 (0x40)", "I2C1, 400 kHz|bus à lui seul|shunt 10 mΩ", [
     (14, ("ALERT", "sig", "GP20 · ALERT (IRQ)")),
     (15, ("SCL", "i2c", "GP19 · I2C1 SCL")),
@@ -186,7 +186,7 @@ for k, (lab, col) in enumerate([("signal 3,3 V", C["sig"]), ("I2C", C["i2c"]),
 add(f'<circle cx="1230" cy="{ly}" r="7" fill="#2e7d32" stroke="#333"/>')
 text(1244, ly + 5, "broche utilisée", 13)
 text(W / 2, H - 22, "Libres : GP10–GP15, GP22, GP26–GP28 (ADC). "
-     "Encodeurs alimentés en 3,3 V : leurs résistances de tirage embarquées restent sûres pour le RP2350. ALERT : drain ouvert, tirage interne. AU : + 100 nF GP21–GND conseillé.",
+     "Encodeurs alimentés en 3,3 V : leurs résistances de tirage embarquées restent sûres pour le RP2350. ALERT : drain ouvert, tirage interne. AU : tirage interne, fils courts.",
      12, "middle", fill="#555")
 add("</svg>")
 

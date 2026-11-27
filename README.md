@@ -67,7 +67,7 @@ Schéma complet : [`docs/cablage.png`](docs/cablage.png) (source
 | Encodeur D | A = GP8 (11), B = GP9 (12), GND (13) |
 | I2C0 (BNO055) | SDA = GP16 (21), SCL = GP17 (22), GND (23) |
 | I2C1 (INA226) | SDA = GP18 (24), SCL = GP19 (25), ALERT = GP20 (26), GND (28) |
-| Arrêt d'urgence | contact NF entre GP21 (27) et GND (28), tirage 4,7 kΩ vers 3V3 |
+| Arrêt d'urgence | contact NF entre GP21 (27) et GND (28), tirage interne |
 | Rails | 3V3(OUT) (36), GND (38) |
 
 Canal 1 du MDD10A = moteur gauche, canal 2 = moteur droit.
@@ -90,9 +90,9 @@ matériel. Le Pico ne fait que le **surveiller** par un contact auxiliaire
 **normalement fermé** du bouton, entre GP21 et GND : bouton relâché, GP21
 est à 0 ; bouton enfoncé ou fil coupé, GP21 remonte à 1 et le drapeau `ESTOP`
 (256) se lève. Une rupture de câblage arrête donc le robot au lieu de passer
-inaperçue. Prévoir une résistance de tirage de 4,7 kΩ vers 3V3 (le tirage
-interne de ~50 kΩ est trop faible pour un fil qui longe les câbles moteur)
-et, si possible, 100 nF entre GP21 et GND. Sans bouton câblé, le robot reste
+inaperçue. Le tirage interne du Pico suffit : les fils du contact sont
+courts, et l'antirebond logiciel (40 ms) écarte les parasites. Si un jour le
+bouton est déporté loin du Pico, ajouter 4,7 kΩ vers 3V3. Sans bouton câblé, le robot reste
 en `ESTOP` : c'est voulu. Pour un banc sans bouton, relier GP21 à GND ou
 mettre `ESTOP_ENABLE` à 0 dans `config.h`.
 

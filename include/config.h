@@ -64,8 +64,8 @@
 /* Surveillance de l'arret d'urgence (AU). Le bouton coupe lui-meme la
  * puissance moteur ; le Pico ne fait que LIRE un contact auxiliaire NF
  * (normalement ferme) du bouton, cable entre GP21 et GND (broche 28,
- * voisine). Tirage au 3V3 : resistance externe 4,7 kOhm conseillee, le
- * tirage interne (~50 kOhm) reste actif en secours.
+ * voisine). Tirage interne du Pico vers 3V3, sans resistance externe : les
+ * fils sont courts et l'antirebond (ESTOP_TRIP_MS) filtre les parasites.
  *   bouton relache : contact ferme  -> GP21 a 0 -> normal
  *   bouton enfonce : contact ouvert -> GP21 a 1 -> FLAG_ESTOP
  *   fil coupe ou debranche          -> GP21 a 1 -> FLAG_ESTOP (securite

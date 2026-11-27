@@ -202,8 +202,8 @@
 <path d="M867,670 H1130" stroke="#1f5fbf" stroke-width="2.5" fill="none"/>
 <text x="995.0" y="665" font-size="12" text-anchor="middle" font-weight="normal" fill="#1f5fbf">GP21 · AU (1 = enfoncé)</text>
 <text x="1140" y="675" font-size="13" text-anchor="start" font-weight="normal" fill="#222">borne 2</text>
-<rect x="1328" y="658" width="122" height="20" rx="10" fill="#c62828"/>
-<text x="1389.0" y="673" font-size="12" text-anchor="middle" font-weight="bold" fill="#fff">4,7 kΩ → 3V3</text>
+<rect x="1310" y="658" width="140" height="20" rx="10" fill="#1f5fbf"/>
+<text x="1380.0" y="673" font-size="12" text-anchor="middle" font-weight="bold" fill="#fff">tirage interne</text>
 <rect x="1130" y="692" width="330" height="116" rx="8" fill="#f4f6fa" stroke="#56657a" stroke-width="1.5"/>
 <text x="1240" y="716" font-size="15" text-anchor="start" font-weight="bold" fill="#222">INA226 (0x40)</text>
 <text x="1240" y="736" font-size="12" text-anchor="start" font-weight="normal" fill="#555">I2C1, 400 kHz</text>
@@ -277,5 +277,5 @@
 <text x="1030" y="1215" font-size="13" text-anchor="start" font-weight="normal" fill="#222">non câblé</text>
 <circle cx="1230" cy="1210" r="7" fill="#2e7d32" stroke="#333"/>
 <text x="1244" y="1215" font-size="13" text-anchor="start" font-weight="normal" fill="#222">broche utilisée</text>
-<text x="750.0" y="1248" font-size="12" text-anchor="middle" font-weight="normal" fill="#555">Libres : GP10–GP15, GP22, GP26–GP28 (ADC). Encodeurs alimentés en 3,3 V : leurs résistances de tirage embarquées restent sûres pour le RP2350. ALERT : drain ouvert, tirage interne. AU : + 100 nF GP21–GND conseillé.</text>
+<text x="750.0" y="1248" font-size="12" text-anchor="middle" font-weight="normal" fill="#555">Libres : GP10–GP15, GP22, GP26–GP28 (ADC). Encodeurs alimentés en 3,3 V : leurs résistances de tirage embarquées restent sûres pour le RP2350. ALERT : drain ouvert, tirage interne. AU : tirage interne, fils courts.</text>
 </svg>
