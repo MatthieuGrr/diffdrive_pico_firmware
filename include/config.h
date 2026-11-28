@@ -18,7 +18,7 @@
 /* Identite                                                                  */
 /* ------------------------------------------------------------------------ */
 #define FW_NAME                 "diffdrive_pico_firmware"
-#define FW_VERSION              "2.1.0"
+#define FW_VERSION              "2.1.1"
 /* Version du protocole serie. Incrementee a chaque changement incompatible
  * des commandes ou de la trame S ; renvoyee par la commande 'i'.           */
 #define PROTO_VERSION           2
@@ -112,7 +112,7 @@
  * Inverser les fils blanc/jaune d'un moteur revient au meme.
  */
 #define MOT_L_INVERT            0
-#define MOT_R_INVERT            1   /* moteurs montes en miroir */
+#define MOT_R_INVERT            0   /* verifie au banc le 28/11 : duty + = avant */
 
 /* ------------------------------------------------------------------------ */
 /* Encodeurs                                                                 */
@@ -140,7 +140,7 @@
  * avant. Permuter les fils noir (A) et rouge (B) revient au meme.
  */
 #define ENC_L_INVERT            0
-#define ENC_R_INVERT            1   /* encodeurs montes en miroir */
+#define ENC_R_INVERT            1   /* verifie au banc le 28/11 : avant = compteur + */
 
 /* Attente maximale d'une publication fraiche du PIO. En fonctionnement      */
 /* normal la SM publie toutes les ~1 us : ce delai n'est qu'un garde-fou.    */
