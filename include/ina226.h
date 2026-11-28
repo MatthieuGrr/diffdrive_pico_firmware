@@ -102,6 +102,9 @@ bool ina226_alert_fired(void);
  * drapeau logiciel. Renvoie true si la broche ALERT est revenue haute. */
 bool ina226_clear_alert(void);
 
+/* Nombre de fronts ALERT rejetes par le filtre anti-parasite de l'ISR. */
+uint32_t ina226_alert_glitches(void);
+
 /* Etat de la broche ALERT (true = alerte active, broche basse). */
 bool ina226_alert_pin_active(void);
 

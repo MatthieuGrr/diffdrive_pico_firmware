@@ -12,6 +12,7 @@
 
 static ina226_t s_st;
 static volatile bool s_alert;
+static volatile uint32_t s_glitches;   /* fronts ALERT rejetes (parasites) */
 
 /* ------------------------------------------------------------------------ */
 /* Interruption ALERT                                                        */
@@ -23,6 +24,17 @@ static void alert_isr(uint gpio, uint32_t events)
 {
     if (gpio != PIN_INA_ALERT) return;
     if (events & GPIO_IRQ_EDGE_FALL) {
+        /* Filtre anti-parasite. L'INA226 est en mode verrouille (LEN) : une
+         * vraie alerte maintient ALERT a l'etat bas jusqu'a la relecture de
+         * Mask/Enable. La commutation du pont (arret depuis la pleine
+         * vitesse) induit sur le fil des impulsions breves que le front
+         * descendant capte alors que l'INA226 n'a rien vu (AFF a 0, broche
+         * deja haute a l'entree de l'ISR, constate au banc le 28/11). On
+         * exige donc que la broche soit encore basse, deux fois a 2 us
+         * d'intervalle. Cout pour une vraie alerte : 2 us. */
+        if (gpio_get(PIN_INA_ALERT)) { s_glitches++; return; }
+        busy_wait_us_32(2);
+        if (gpio_get(PIN_INA_ALERT)) { s_glitches++; return; }
         motors_inhibit(true);
         s_alert = true;
     }
@@ -166,6 +178,11 @@ bool ina226_clear_alert(void)
     if (s_st.present) (void)ina226_read_reg(INA226_REG_MASK_EN, &m);
     s_alert = false;
     return !ina226_alert_pin_active();
+}
+
+uint32_t ina226_alert_glitches(void)
+{
+    return s_glitches;
 }
 
 const ina226_t *ina226_state(void)
