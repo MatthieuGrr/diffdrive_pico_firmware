@@ -242,10 +242,10 @@ mesure** sur le robot livré.
 
 | Constante | Valeur | Remarque |
 |---|---|---|
-| Counts par tour de roue (`N`) | *à mesurer* | 16 PPR × 4 × rapport du réducteur |
-| Diamètre de roue (`D`) | *à mesurer* | |
+| Counts par tour de roue (`N`) | **3254** | mesuré au banc (10 tours : 32511 / 32558) ; théorique 64 × 50,9 ≈ 3258 |
+| Diamètre de roue (`D`) | **0,100 m** | nominal, à affiner par un roulage mesuré |
 | Entraxe (`L`) | *à mesurer* | distance entre les points de contact des deux roues |
-| Vitesse maximale | *à mesurer* | en ticks/s, à duty 1000, sur batterie chargée |
+| Vitesse maximale | **≈ 6500 ticks/s** | roues en l'air, duty 1000, batterie à 19,6 V : ≈ 2 tr/s, ≈ 0,63 m/s ; moins au sol |
 | Orientation de l'IMU | *à préciser* | axes x/y/z du BNO055 par rapport au robot |
 
 Conversions :

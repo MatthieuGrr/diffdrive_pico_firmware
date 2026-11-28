@@ -323,7 +323,7 @@
  * moteur en x4, multiplies par le rapport du reducteur planetaire.
  * A MESURER sur 10 tours de roue a la main avec t 1 (0 = inconnu).
  */
-#define TEST_COUNTS_PER_REV     0
+#define TEST_COUNTS_PER_REV     3254    /* mesure au banc le 28/11 */
 
 /* Cadence d'affichage des modes lents (t 1, t 2, t 3), en Hz.               */
 #define TEST_SLOW_LOG_HZ        5u
