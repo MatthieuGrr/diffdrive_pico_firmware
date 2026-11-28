@@ -36,4 +36,10 @@ void  pid_set_gains(pid_t *p, float kp, float ki, float kd);
 void  pid_reset(pid_t *p);
 float pid_update(pid_t *p, float setpoint, float measurement, float dt_s);
 
+/* Comme pid_update, mais la sortie est en plus bornee a [lo, hi] pour ce
+ * cycle (limitation du courant d'appel). L'anti-emballement voit cette
+ * borne : l'integrale ne grossit pas pendant que la sortie est retenue. */
+float pid_update_clamped(pid_t *p, float setpoint, float measurement,
+                         float dt_s, float lo, float hi);
+
 #endif /* DIFFDRIVE_PICO_PID_H */

@@ -34,6 +34,15 @@ void pid_reset(pid_t *p)
 
 float pid_update(pid_t *p, float setpoint, float measurement, float dt_s)
 {
+    return pid_update_clamped(p, setpoint, measurement, dt_s,
+                              p->out_min, p->out_max);
+}
+
+float pid_update_clamped(pid_t *p, float setpoint, float measurement,
+                         float dt_s, float lo, float hi)
+{
+    if (lo < p->out_min) lo = p->out_min;
+    if (hi > p->out_max) hi = p->out_max;
     if (dt_s <= 0.0f) {
         return p->last_out;
     }
@@ -58,12 +67,12 @@ float pid_update(pid_t *p, float setpoint, float measurement, float dt_s)
     float out = ff + p_term + p->ki * integ_try + d_term;
 
     bool sat = false;
-    if (out > p->out_max) {
-        out = p->out_max;
+    if (out > hi) {
+        out = hi;
         sat = true;
         if (err > 0.0f) integ_try = p->integ;    /* on gele l'integrale */
-    } else if (out < p->out_min) {
-        out = p->out_min;
+    } else if (out < lo) {
+        out = lo;
         sat = true;
         if (err < 0.0f) integ_try = p->integ;
     }

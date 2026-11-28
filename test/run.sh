@@ -30,6 +30,9 @@ $CC $CFLAGS -o "$OUT/p" test/test_protocol.c src/protocol.c src/pid.c && "$OUT/p
 echo; echo "########## PID ##########"
 $CC $CFLAGS -o "$OUT/i" test/test_pid.c src/pid.c -lm && "$OUT/i" || rc=1
 
+echo; echo "########## limitation du courant d'appel ##########"
+$CC $CFLAGS -o "$OUT/l" test/test_ilim.c src/pid.c -lm && "$OUT/l" || rc=1
+
 echo; echo "########## moteurs — MDD10A ##########"
 $CC $CFLAGS -o "$OUT/m" test/test_motors.c src/motors.c -lm && "$OUT/m" || rc=1
 

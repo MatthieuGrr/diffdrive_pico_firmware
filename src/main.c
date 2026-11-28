@@ -44,6 +44,7 @@
 #include "ina226.h"
 #include "safety.h"
 #include "pid.h"
+#include "ilim.h"
 #include "protocol.h"
 #include "testmodes.h"
 
@@ -287,9 +288,10 @@ static void control_step(uint64_t now_us, float dt_s)
         switch (g_robot.ctrl_mode) {
         case CTRL_VELOCITY:
             for (int i = 0; i < 2; i++) {
-                float out = pid_update(&g_robot.pid[i],
-                                       (float)g_robot.sp_ticks[i],
-                                       e->vel[i], dt_s);
+                ilim_win_t w = ilim_window(e->vel[i], g_robot.vbat_mv);
+                float out = pid_update_clamped(&g_robot.pid[i],
+                                               (float)g_robot.sp_ticks[i],
+                                               e->vel[i], dt_s, w.lo, w.hi);
                 int d = (int)(out >= 0.0f ? out + 0.5f : out - 0.5f);
                 g_robot.out_duty[i] = d;
                 motors_set(i, d);
@@ -298,8 +300,10 @@ static void control_step(uint64_t now_us, float dt_s)
 
         case CTRL_OPENLOOP:
             for (int i = 0; i < 2; i++) {
-                g_robot.out_duty[i] = g_robot.ol_duty[i];
-                motors_set(i, g_robot.ol_duty[i]);
+                int d = ilim_apply(g_robot.ol_duty[i],
+                                   ilim_window(e->vel[i], g_robot.vbat_mv));
+                g_robot.out_duty[i] = d;
+                motors_set(i, d);
             }
             break;
 

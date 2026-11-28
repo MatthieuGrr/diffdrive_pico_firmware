@@ -114,6 +114,22 @@
 #define MOT_L_INVERT            0
 #define MOT_R_INVERT            0   /* verifie au banc le 28/11 : duty + = avant */
 
+/*
+ * LIMITATION DU COURANT D'APPEL (voir ilim.h). Sans elle, un echelon de 0 a
+ * pleine puissance sur les deux roues depasse OC_TRIP_MA et verrouille le
+ * robot. Elle ne retient que les sauts que le moteur ne peut pas suivre.
+ *  ILIM_TICKS_PER_DUTY : vitesse a vide par point de duty, mesuree au banc
+ *    a ILIM_VREF_MV (6500 ticks/s a duty 1000 sous 19,6 V, le 28/11).
+ *  ILIM_DUTY_DELTA : ecart maximal entre duty applique et duty de f.c.e.m.,
+ *    regle au banc le 28/11, roues en l'air : 500 donne ~2,8 A de crete
+ *    mesuree, 750 ~5,7 A sans declencher. 500 garde de la marge pour la
+ *    charge au sol (acceleration plus lente, appel plus long).
+ */
+#define ILIM_ENABLE             1
+#define ILIM_TICKS_PER_DUTY     6.5f
+#define ILIM_VREF_MV            19600
+#define ILIM_DUTY_DELTA         500
+
 /* ------------------------------------------------------------------------ */
 /* Encodeurs                                                                 */
 /* ------------------------------------------------------------------------ */
